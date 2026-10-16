@@ -16,6 +16,8 @@ import { PenaltyKickModal } from './components/PenaltyKickModal';
 import { HelpModal } from './components/HelpModal';
 import { GuidePage, Logo } from './components/GuidePage';
 import { Thermometer } from './components/Thermometer';
+import { SaveButtons, SaveReminder, LoadDialog } from './components/SaveCenter';
+import { StartScreen } from './components/StartScreen';
 import { MODE_LABEL, DEFAULT_CITY } from './mock/geo';
 import { PlansModal } from './components/PlansModal';
 import { BriefingPanel, CalendarPanel, CareerPanel, InboxPanel, TablePanel, TrainingPanel } from './components/HomePanels';
@@ -36,6 +38,10 @@ export function App() {
   const [muted, setMuted] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [paused, setPaused] = useState(true);
+  const [showLoad, setShowLoad] = useState(false);
+  const [started, setStarted] = useState(() => { try { return sessionStorage.getItem('o-apito-autostart') === '1'; } catch { return false; } });
+  const [showGuideModal, setShowGuideModal] = useState(false);
+  const [, setSaveTick] = useState(0);
   const [showPlans, setShowPlans] = useState(false);
   const {
     isProfileCreated, season, seasonGame, actionPoints, referee, teams, fixtures, seasonHistory, inbox, approach, matchHistory,
@@ -91,9 +97,39 @@ export function App() {
   const seasonReports = matchHistory.filter(x => x.season === season);
   const unread = inbox.filter(m => !m.read).length;
 
+  if (!started) {
+    const startNew = () => {
+      if (isProfileCreated) {
+        if (!window.confirm('Começar uma nova carreira apaga a carreira atual deste aparelho. Se quiser guardá-la, use "Carregar arquivo" depois de salvar em arquivo. Continuar?')) return;
+        try { sessionStorage.setItem('o-apito-autostart', '1'); } catch { /* sem armazenamento */ }
+        resetCareer();
+      } else setStarted(true);
+    };
+    return (
+      <>
+        <StartScreen
+          hasCareer={isProfileCreated}
+          name={referee.name} tier={referee.tier} season={season} seasonGame={seasonGame} matches={referee.stats.matches} avg={referee.uefaAverageScore}
+          onContinue={() => setStarted(true)} onNew={startNew} onLoad={() => setShowLoad(true)}
+          onHelp={() => setShowHelp(true)} onGuide={() => setShowGuideModal(true)}
+        />
+        {showLoad && <LoadDialog onImport={importCareer} onClose={() => setShowLoad(false)} hasCareer={isProfileCreated} />}
+        {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+        {showGuideModal && (
+          <div className="fixed inset-0 z-[70] bg-slate-950 overflow-y-auto" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            <div className="max-w-5xl mx-auto p-3 sm:p-6 flex flex-col gap-3">
+              <button onClick={() => setShowGuideModal(false)} className="self-start px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-black text-xs font-black">← Voltar</button>
+              <GuidePage />
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="app-bg min-h-screen text-slate-100 flex flex-col font-sans">
-      {!isProfileCreated && <ProfileModal onSave={createProfile} />}
+      {!isProfileCreated && <ProfileModal onSave={createProfile} onImport={importCareer} />}
       {showHistory && <MatchHistoryModal history={matchHistory} onClose={() => setShowHistory(false)} />}
       {currentGoalAnimation && activeMatch && (
         <GoalCelebrationOverlay
@@ -106,6 +142,7 @@ export function App() {
       {currentManagerIncident && <ManagerIncidentModal incident={currentManagerIncident} onResolve={resolveManagerIncident} />}
       {captainTalk && <CaptainTalkModal talk={captainTalk} onResolve={resolveCaptainTalk} />}
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+      {showLoad && <LoadDialog onImport={importCareer} onClose={() => setShowLoad(false)} hasCareer={isProfileCreated} />}
       {showPlans && <PlansModal onClose={() => setShowPlans(false)} />}
       {penaltyKick && activeMatch && (
         <PenaltyKickModal
@@ -138,11 +175,13 @@ export function App() {
           <div><span className="text-slate-400 block">Nota média</span><span className="font-bold text-emerald-400">{referee.uefaAverageScore.toFixed(2)}</span></div>
           <div><span className="text-slate-400 block">Reputação</span><span className="font-bold text-cyan-400">{referee.reputation}</span></div>
           <div><span className="text-slate-400 block">Saldo</span><span className="font-bold text-amber-400">R$ {referee.bankBalance.toLocaleString()}</span></div>
-          <div className="col-span-4 flex gap-2 sm:contents">
+          <div className="col-span-4 flex flex-wrap gap-1.5 sm:gap-2 sm:contents">
+          {!hasMatch && <button onClick={() => setStarted(false)} className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-lg font-bold" title="Voltar ao menu inicial">🏠 Menu</button>}
+          <SaveButtons compact onExport={exportCareer} matches={referee.stats.matches} onSaved={() => setSaveTick(t => t + 1)} onOpenLoad={() => setShowLoad(true)} />
           <button onClick={() => setShowPlans(true)} className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 text-black rounded-lg font-black border border-amber-400 transition" title="Planos e acesso antecipado">⭐ Planos</button>
             <button onClick={() => setShowHelp(true)} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg font-bold border border-slate-700 transition" title="Como jogar">❓ Ajuda</button>
             <button onClick={() => setShowHistory(true)} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg font-bold border border-slate-700 transition">📜 Súmulas</button>
-          <button onClick={() => { if (window.confirm('Apagar a carreira e começar do zero?')) resetCareer(); }} className="px-3 py-1.5 bg-slate-900 hover:bg-red-950 text-slate-400 hover:text-red-300 rounded-lg border border-slate-800 transition">Nova carreira</button>
+          <button onClick={() => { if (window.confirm('Apagar a carreira e começar do zero?')) { try { sessionStorage.setItem('o-apito-autostart', '1'); } catch { /* sem armazenamento */ } resetCareer(); } }} className="px-3 py-1.5 bg-slate-900 hover:bg-red-950 text-slate-400 hover:text-red-300 rounded-lg border border-slate-800 transition">Nova carreira</button>
           </div>
         </div>
       </header>
@@ -173,7 +212,7 @@ export function App() {
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <button onClick={() => setPaused(p => !p)} disabled={activeMatch.status !== 'PLAYING'} className={'px-3 py-1 rounded-lg font-black border transition disabled:opacity-40 ' + (paused ? 'bg-amber-400 text-black border-amber-300' : 'bg-slate-800 border-slate-600 text-slate-100 hover:bg-slate-700')}>{paused ? '▶ Continuar' : '⏸ Pausar'}</button>
                   <span className="text-slate-400">Velocidade:</span>
                   {[1, 2, 4, 8].map(v => (
@@ -254,6 +293,7 @@ export function App() {
             ))}
           </div>
 
+          {tab === 'INICIO' && <SaveReminder matches={referee.stats.matches} onExport={exportCareer} onSaved={() => setSaveTick(t => t + 1)} />}
           {tab === 'INICIO' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
               <div className="lg:col-span-2 flex flex-col gap-5">
@@ -308,7 +348,7 @@ export function App() {
               <RivalsPanel rivals={rivals} name={referee.name} avg={referee.uefaAverageScore} />
               <GrudgePanel grudges={grudges} teams={teams} />
               <ResidencePanel city={referee.homeCity ?? DEFAULT_CITY} balance={referee.bankBalance} movedThisSeason={movedSeason === season} onMove={moveHome} />
-              <SaveFilePanel onExport={exportCareer} onImport={importCareer} />
+              <SaveFilePanel onExport={exportCareer} matches={referee.stats.matches} onSaved={() => setSaveTick(t => t + 1)} onOpenLoad={() => setShowLoad(true)} />
             </div>
           )}
         </main>

@@ -52,7 +52,7 @@ const SECTIONS: Section[] = [
       { icon: '🏠', title: 'Onde você mora', text: 'Você escolhe a cidade onde mora ao criar o árbitro. A distância e o custo de cada viagem saem da sua cidade até o estádio: até cerca de 450 km vai de carro, acima disso de avião. Na aba Carreira dá para se mudar (R$ 500, uma vez por temporada).' },
       { icon: '✈️', title: 'Escalas e viagens', text: 'Jogos grandes pagam mais. Viagens custam dinheiro, descontado do seu pagamento. Você pode recusar uma escala por temporada, perdendo reputação.' },
       { icon: '📰', title: 'Eventos e mídia', text: 'Entre os jogos surgem cursos, boatos e convites. Depois de cada partida, a mídia comenta o seu trabalho.' },
-      { icon: '💾', title: 'Salvar carreira', text: 'Na aba Carreira você salva a carreira em um arquivo e carrega depois, para não perder o progresso.' },
+      { icon: '💾', title: 'Salvar e carregar', text: 'No topo do jogo há os botões 💾 Salvar e 📂 Carregar. Salvar baixa um arquivo com o seu nome, a temporada e a data. Para continuar depois (ou em outro aparelho), clique em Carregar e escolha ou arraste o arquivo. Dica: guarde no Google Drive ou no e-mail.' },
     ],
   },
   {

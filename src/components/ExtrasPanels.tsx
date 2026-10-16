@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import type { Difficulty, Rival, SeasonGoal, Team, Trait, MatchReport } from '../types/types';
 import { DIFFICULTY, TRAIT_ICON, TRAIT_LABEL, evaluateGoals, goalProgressText, grudgeColor, grudgeLabel, rankingWith } from '../store/careerExtras';
 import { CITY_OPTIONS, cityLabel } from '../mock/geo';
+import { SaveButtons } from './SaveCenter';
 
 const Card = ({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) => (
   <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-5 flex flex-col gap-3">
@@ -80,39 +81,15 @@ export const DifficultyPanel = ({ value, onChange, locked }: { value: Difficulty
   </Card>
 );
 
-export const SaveFilePanel = ({ onExport, onImport }: { onExport: () => string; onImport: (json: string) => boolean }) => {
-  const ref = useRef<HTMLInputElement>(null);
-  const [msg, setMsg] = useState('');
-  const save = () => {
-    try {
-      const blob = new Blob([onExport()], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'o-apito-carreira-' + new Date().toISOString().slice(0, 10) + '.json';
-      a.click();
-      URL.revokeObjectURL(url);
-      setMsg('Arquivo salvo. Guarde-o em um lugar seguro.');
-    } catch { setMsg('Não foi possível salvar o arquivo.'); }
-  };
-  const load = async (f: File | undefined) => {
-    if (!f) return;
-    const ok = onImport(await f.text());
-    setMsg(ok ? 'Carreira carregada com sucesso!' : 'Esse arquivo não é uma carreira válida do O Apito.');
-    if (ref.current) ref.current.value = '';
-  };
-  return (
-    <Card title="💾 Salvar carreira em arquivo">
-      <p className="text-xs text-slate-400">O jogo já salva sozinho neste navegador. Para não perder o progresso ou jogar em outro aparelho, salve a carreira em um arquivo e carregue depois.</p>
-      <div className="flex flex-wrap gap-2">
-        <button onClick={save} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-xs font-bold">⬇ Salvar em arquivo</button>
-        <button onClick={() => ref.current?.click()} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold">⬆ Carregar arquivo</button>
-        <input ref={ref} type="file" accept="application/json,.json" className="hidden" onChange={e => { void load(e.target.files?.[0]); }} />
-      </div>
-      {msg && <span className="text-xs text-amber-300">{msg}</span>}
-    </Card>
-  );
-};
+export const SaveFilePanel = ({ onExport, matches, onSaved, onOpenLoad }: { onExport: () => string; matches: number; onSaved: () => void; onOpenLoad: () => void }) => (
+  <Card title="💾 Salvar e carregar carreira">
+    <p className="text-xs text-slate-400">O jogo já guarda sozinho neste navegador. Para não perder o progresso ou jogar em outro aparelho, clique em <b className="text-slate-200">Salvar</b>: ele baixa um arquivo com o seu nome, a temporada e a data. Depois é só clicar em <b className="text-slate-200">Carregar</b> e escolher esse arquivo.</p>
+    <div className="flex flex-wrap gap-2">
+      <SaveButtons onExport={onExport} matches={matches} onSaved={onSaved} onOpenLoad={onOpenLoad} />
+    </div>
+    <span className="text-[10px] text-slate-500">Dica: guarde o arquivo no Google Drive ou no e-mail para ter em qualquer lugar.</span>
+  </Card>
+);
 
 export const WatchList = ({ roster, traits, foulCounts, yellowCounts, teamName }: {
   roster: string[]; traits: Trait[]; foulCounts: number[]; yellowCounts: number[]; teamName: string;

@@ -2,9 +2,11 @@ import { useState } from 'react';
 import type { RefereeStyle } from '../types/types';
 import { Logo } from './GuidePage';
 import { CITY_OPTIONS, DEFAULT_CITY } from '../mock/geo';
+import { LoadDialog } from './SaveCenter';
 
 interface Props {
   onSave: (data: { name: string; age: number; federation: string; style: RefereeStyle; homeCity: string }) => void;
+  onImport: (json: string) => boolean;
 }
 
 const STYLES: [RefereeStyle, string, string][] = [
@@ -14,7 +16,8 @@ const STYLES: [RefereeStyle, string, string][] = [
   ['RIGOROSO', 'Rigoroso', 'Cartão fácil e pouca conversa']
 ];
 
-export const ProfileModal = ({ onSave }: Props) => {
+export const ProfileModal = ({ onSave, onImport }: Props) => {
+  const [showLoad, setShowLoad] = useState(false);
   const [name, setName] = useState('Carlos Silva');
   const [age, setAge] = useState(26);
   const [federation, setFederation] = useState('Federação Paulista de Futebol (FPF)');
@@ -76,8 +79,10 @@ export const ProfileModal = ({ onSave }: Props) => {
           <button type="submit" className="w-full mt-1 py-3 bg-amber-400 hover:bg-amber-300 text-black font-black rounded-xl transition shadow-lg shadow-amber-500/20 brand-font text-base">
             Começar a temporada na Série D
           </button>
+          <button type="button" onClick={() => setShowLoad(true)} className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold">📂 Já tenho um arquivo salvo: carregar carreira</button>
         </form>
       </div>
+      {showLoad && <LoadDialog onImport={onImport} onClose={() => setShowLoad(false)} hasCareer={false} />}
     </div>
   );
 };
