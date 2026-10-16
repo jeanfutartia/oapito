@@ -247,10 +247,7 @@ export function pickCareerEvent(lastId: string | null): CareerEvent | null {
 }
 
 // ---------- Escala e viagem ----------
-export function travelKm(home: Team, away: Team): number {
-  return 60 + (hash(home.id + away.id) % 1700);
-}
-export const travelCost = (km: number): number => Math.round((km * 0.12) / 10) * 10;
+export { travelBetween } from '../mock/geo';
 const BIG_LIMIT: Record<DivisionTier, number> = { SERIE_D: 68, SERIE_C: 73.5, SERIE_B: 78.5, SERIE_A: 84.5, FIFA_INTERNACIONAL: 86 };
 export function isBigMatch(home: Team, away: Team): boolean {
   const avg = (home.attackStrength + home.defenseStrength + away.attackStrength + away.defenseStrength) / 4;

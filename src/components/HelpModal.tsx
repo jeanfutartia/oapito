@@ -20,7 +20,7 @@ export const HelpModal = ({ onClose }: Props) => (
         Apite 6 jogos por temporada. A média das notas decide: acima de 9,0 você sobe de divisão; abaixo de 7,0 você desce. Cada decisão errada, tumulto ou conduta ruim derruba a nota.
       </Section>
       <Section icon="🔥" title="Pressão e apito forte">
-        Faltas, cartões e gols aumentam a pressão do jogo (barra no painel). Acima de 80% pode estourar um <b>tumulto</b>, com amarelos para os dois times e queda na nota. Use o <b>📢 apito forte</b> quando passar de 55% para esfriar o jogo (máximo 5 vezes, com intervalo de 6 minutos). Sem necessidade, os jogadores reclamam.
+        Faltas, cartões e gols aumentam a pressão do jogo. O 🌡️ termômetro acima do campo mostra a temperatura: Calmo, Atenção, Quente e Explosivo. Acima de 80% pode estourar um <b>tumulto</b>, com amarelos para os dois times e queda na nota. Use o <b>📢 apito forte</b> quando passar de 55% para esfriar o jogo (máximo 5 vezes, com intervalo de 6 minutos). Sem necessidade, os jogadores reclamam.
       </Section>
       <Section icon="⚽" title="Pênaltis">
         Depois de marcar o pênalti, confira o goleiro e a área: mande o goleiro voltar à linha e afaste os jogadores antes de apitar a cobrança. Apitar com irregularidade custa nota.

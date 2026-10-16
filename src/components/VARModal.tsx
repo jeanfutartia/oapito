@@ -22,6 +22,8 @@ export const VARModal = ({ incident, homeTeam, awayTeam, onConfirm }: VARModalPr
   const isGoalOrOffside = incident.category === 'IMPEDIMENTO_3D' || incident.category === 'GOL_POLÊMICO';
   const isDispute = incident.category === 'PENALTI_DISPUTA';
   const isHandGoal = incident.category === 'GOL_POLÊMICO';
+  // Pênalti só existe se o lance foi dentro da grande área (as pontas do campo, nos dois lados).
+  const inBox = (incident.pitchZone.xPercent <= 20 || incident.pitchZone.xPercent >= 80) && incident.pitchZone.yPercent >= 18 && incident.pitchZone.yPercent <= 82;
   const isPenaltyContext = incident.category === 'DOGSO_CHANCE_CLARA' || incident.category === 'PENALTI_DISPUTA' || incident.category === 'MAO_VOLUMETRIA';
 
   return (
@@ -61,12 +63,12 @@ export const VARModal = ({ incident, homeTeam, awayTeam, onConfirm }: VARModalPr
               {isDispute && <Btn onClick={() => onConfirm('YELLOW_CARD')} cls="bg-yellow-600 hover:bg-yellow-500 text-black" title="🟨 Simulação" sub="Amarelo ao atacante" />}
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <div className={'grid grid-cols-2 gap-2 ' + (inBox ? 'md:grid-cols-5' : 'md:grid-cols-4')}>
               <Btn onClick={() => onConfirm('PLAY_ON')} cls="bg-slate-800 hover:bg-slate-700 text-white border border-slate-700" title="Seguir" />
               <Btn onClick={() => onConfirm('FOUL')} cls="bg-amber-900/60 hover:bg-amber-800 text-amber-200 border border-amber-700" title="Falta simples" />
               <Btn onClick={() => onConfirm('YELLOW_CARD')} cls="bg-yellow-600 hover:bg-yellow-500 text-black" title="🟨 Amarelo" />
               <Btn onClick={() => onConfirm('RED_CARD')} cls="bg-red-600 hover:bg-red-500 text-white" title="🟥 Vermelho" />
-              <Btn onClick={() => onConfirm('PENALTY')} cls="bg-emerald-600 hover:bg-emerald-500 text-white" title="Pênalti" sub="75% de conversão" />
+              {inBox && <Btn onClick={() => onConfirm('PENALTY')} cls="bg-emerald-600 hover:bg-emerald-500 text-white" title="Pênalti" sub="Só dentro da área" />}
             </div>
           )}
         </div>

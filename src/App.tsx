@@ -15,11 +15,13 @@ import { SmartRefereeDashboard } from './components/SmartRefereeDashboard';
 import { PenaltyKickModal } from './components/PenaltyKickModal';
 import { HelpModal } from './components/HelpModal';
 import { GuidePage, Logo } from './components/GuidePage';
+import { Thermometer } from './components/Thermometer';
+import { MODE_LABEL, DEFAULT_CITY } from './mock/geo';
 import { PlansModal } from './components/PlansModal';
 import { BriefingPanel, CalendarPanel, CareerPanel, InboxPanel, TablePanel, TrainingPanel } from './components/HomePanels';
 import { CareerEventModal } from './components/CareerEventModal';
 import { TipBanner, LessonCard } from './components/GuideWidgets';
-import { GoalsPanel, RivalsPanel, GrudgeChips, GrudgePanel, DifficultyPanel, SaveFilePanel, WatchList } from './components/ExtrasPanels';
+import { GoalsPanel, RivalsPanel, GrudgeChips, GrudgePanel, DifficultyPanel, SaveFilePanel, WatchList, ResidencePanel } from './components/ExtrasPanels';
 import { HINTS, DIFFICULTY } from './store/careerExtras';
 import { CHAMPIONSHIP, roundDate, tierLabel, fmtMinute, WEATHER_LABEL, humanize } from './store/careerLogic';
 import { soundEffects } from './services/soundEffects';
@@ -39,7 +41,7 @@ export function App() {
     isProfileCreated, season, seasonGame, actionPoints, referee, teams, fixtures, seasonHistory, inbox, approach, matchHistory,
     nextMatchSchedule, careerNews, currentManagerIncident, captainTalk, pressConference, currentGoalAnimation, gameTwistUsed,
     isEvaluatingPostMatch, homeManagerEjected, awayManagerEjected, liveStats, activeMatch, pitchFx, penaltyKick,
-    grudges, difficulty, seasonGoals, rivals, careerEvent, tip, lesson, declinesUsed,
+    grudges, difficulty, seasonGoals, rivals, careerEvent, tip, lesson, declinesUsed, movedSeason, moveHome,
     setDifficulty, answerCareerEvent, dismissTip, dismissLesson, declineAssignment, exportCareer, importCareer,
     createProfile, startScheduledMatch, startSecondHalf, triggerGameTwistAction, clearGoalAnimation, updateMatchMinute, setMatchSpeed,
     triggerInstantFieldDecision, openVarRadioIntercom, openVarMonitorOFR, confirmFinalDecision, resolveManagerIncident,
@@ -188,12 +190,7 @@ export function App() {
 
               {tip && <TipBanner text={tip} onClose={dismissTip} />}
 
-              {activeMatch.status === 'PLAYING' && activeMatch.matchTemperature >= 70 && (
-                <div className={'rounded-xl border p-2.5 text-xs flex flex-wrap items-center justify-between gap-2 ' + (activeMatch.matchTemperature >= 80 ? 'border-red-600 bg-red-950/50 text-red-200 animate-pulse' : 'border-amber-600 bg-amber-950/40 text-amber-200')}>
-                  <span>🔥 Pressão {Math.round(activeMatch.matchTemperature)}% — {activeMatch.matchTemperature >= 80 ? 'risco de tumulto!' : 'os ânimos esquentam.'}</span>
-                  <button onClick={strongWhistle} disabled={activeMatch.whistles >= 5} className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black font-black">📢 Apito forte ({activeMatch.whistles}/5)</button>
-                </div>
-              )}
+              <Thermometer value={activeMatch.matchTemperature} whistles={activeMatch.whistles} onStrongWhistle={strongWhistle} playing={activeMatch.status === 'PLAYING' && !paused} />
 
               <div className="relative">
               <PitchCanvas
@@ -278,7 +275,7 @@ export function App() {
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-[11px]">
                       {sc.big && <span className="px-2 py-1 rounded-lg bg-amber-500/20 border border-amber-500/60 text-amber-300 font-bold">⭐ Jogo grande: pagamento +30%, mais pressão</span>}
-                      {sc.km !== undefined && <span className="px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300">✈️ Viagem de {sc.km} km • custo R$ {(sc.travelCost ?? 0).toLocaleString()}</span>}
+                      {sc.km !== undefined && <span className="px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300">{sc.travelMode ? MODE_LABEL[sc.travelMode] : '🚗'} • {sc.travelFrom} → {sc.travelTo} • {sc.km} km • custo R$ {(sc.travelCost ?? 0).toLocaleString()}</span>}
                     </div>
                     <GrudgeChips grudges={grudges} home={sc.home} away={sc.away} />
                     <div className="bg-slate-950 rounded-xl border border-slate-800 p-4 text-xs flex flex-col gap-2">
@@ -310,6 +307,7 @@ export function App() {
               <GoalsPanel goals={seasonGoals} seasonReports={seasonReports} season={season} />
               <RivalsPanel rivals={rivals} name={referee.name} avg={referee.uefaAverageScore} />
               <GrudgePanel grudges={grudges} teams={teams} />
+              <ResidencePanel city={referee.homeCity ?? DEFAULT_CITY} balance={referee.bankBalance} movedThisSeason={movedSeason === season} onMove={moveHome} />
               <SaveFilePanel onExport={exportCareer} onImport={importCareer} />
             </div>
           )}

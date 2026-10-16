@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import type { Difficulty, Rival, SeasonGoal, Team, Trait, MatchReport } from '../types/types';
 import { DIFFICULTY, TRAIT_ICON, TRAIT_LABEL, evaluateGoals, goalProgressText, grudgeColor, grudgeLabel, rankingWith } from '../store/careerExtras';
+import { CITY_OPTIONS, cityLabel } from '../mock/geo';
 
 const Card = ({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) => (
   <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-5 flex flex-col gap-3">
@@ -126,6 +127,27 @@ export const WatchList = ({ roster, traits, foulCounts, yellowCounts, teamName }
           <span className="shrink-0 text-slate-500">{TRAIT_LABEL[t]}{foulCounts[i] > 0 ? ' • ' + foulCounts[i] + ' falta(s)' : ''}{yellowCounts[i] > 0 ? ' 🟨' : ''}</span>
         </div>
       ))}
+    </div>
+  );
+};
+
+
+export const ResidencePanel = ({ city, balance, movedThisSeason, onMove }: { city: string; balance: number; movedThisSeason: boolean; onMove: (key: string) => { ok: boolean; msg: string } }) => {
+  const [sel, setSel] = useState(city);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-4 flex flex-col gap-2">
+      <h2 className="text-sm font-bold uppercase tracking-wide">🏠 Onde você mora</h2>
+      <p className="text-[11px] text-slate-400">Moradia atual: <b className="text-slate-100">{cityLabel(city)}</b>. As viagens são calculadas a partir daqui: até cerca de 450 km vai de carro, acima disso de avião.</p>
+      <div className="flex flex-wrap gap-2">
+        <select value={sel} onChange={e => { setSel(e.target.value); setMsg(null); }} className="flex-1 min-w-[180px] bg-black border border-slate-700 rounded-lg p-2 text-xs text-slate-100">
+          {CITY_OPTIONS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+        </select>
+        <button disabled={movedThisSeason || sel === city || balance < 500} onClick={() => { const r = onMove(sel); setMsg({ ok: r.ok, text: r.msg }); }}
+          className="px-3 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 disabled:opacity-40 disabled:hover:bg-amber-400 text-black text-xs font-black">Mudar (R$ 500)</button>
+      </div>
+      <span className="text-[10px] text-slate-500">{movedThisSeason ? 'Você já se mudou nesta temporada.' : 'Uma mudança por temporada.'}</span>
+      {msg && <span className={'text-[11px] font-bold ' + (msg.ok ? 'text-emerald-400' : 'text-red-400')}>{msg.text}</span>}
     </div>
   );
 };

@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import type { RefereeStyle } from '../types/types';
 import { Logo } from './GuidePage';
+import { CITY_OPTIONS, DEFAULT_CITY } from '../mock/geo';
 
 interface Props {
-  onSave: (data: { name: string; age: number; federation: string; style: RefereeStyle }) => void;
+  onSave: (data: { name: string; age: number; federation: string; style: RefereeStyle; homeCity: string }) => void;
 }
 
 const STYLES: [RefereeStyle, string, string][] = [
@@ -18,10 +19,11 @@ export const ProfileModal = ({ onSave }: Props) => {
   const [age, setAge] = useState(26);
   const [federation, setFederation] = useState('Federação Paulista de Futebol (FPF)');
   const [style, setStyle] = useState<RefereeStyle>('DIALOGADOR');
+  const [homeCity, setHomeCity] = useState(DEFAULT_CITY);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({ name, age, federation, style });
+    onSave({ name, age, federation, style, homeCity });
   };
 
   const field = 'w-full bg-black border border-slate-700 rounded-lg p-2.5 text-slate-100 focus:outline-none focus:border-amber-400';
@@ -51,6 +53,13 @@ export const ProfileModal = ({ onSave }: Props) => {
               <label className="block text-slate-300 font-bold mb-1">Federação</label>
               <input type="text" value={federation} onChange={e => setFederation(e.target.value)} className={field} />
             </div>
+          </div>
+          <div>
+            <label className="block text-slate-300 font-bold mb-1">Cidade onde você mora</label>
+            <select value={homeCity} onChange={e => setHomeCity(e.target.value)} className={field}>
+              {CITY_OPTIONS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+            </select>
+            <span className="block text-[10px] text-slate-500 mt-1">Define a distância e o custo das viagens até os estádios. Dá para se mudar depois.</span>
           </div>
           <div>
             <label className="block text-slate-300 font-bold mb-1">Seu estilo de apitar</label>

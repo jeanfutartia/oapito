@@ -15,11 +15,13 @@ import type { Weather, MatchProfile } from './careerLogic';
 import { buildPreMatchStoryline, buildTwistNarrative, buildPostMatchMedia } from '../services/offlineContent';
 import {
   DIFFICULTY, TIPS, assignTraits, weightedPlayer, captainNumber, cardChance, harmedSide, updateGrudges, grudgeHeat, grudgeQuestion,
-  GOAL_POOL, buildReaction, makeSeasonGoals, evaluateGoals, initRivals, stepRivals, pickCareerEvent, travelKm, travelCost, isBigMatch, goalHighlight
+  GOAL_POOL, buildReaction, makeSeasonGoals, evaluateGoals, initRivals, stepRivals, pickCareerEvent, travelBetween, isBigMatch, goalHighlight
 } from './careerExtras';
 import type { Lesson } from './careerExtras';
 import { getRandomIncidentsForMatch } from '../mock/incidentsDatabase';
 import { soundEffects } from '../services/soundEffects';
+import { DEFAULT_CITY, cityLabel } from '../mock/geo';
+import type { TravelMode } from '../mock/geo';
 
 const mk = (
   id: string, name: string, shortName: string, tier: DivisionTier, c1: string, c2: string,
@@ -70,6 +72,12 @@ const ALL_TEAMS: Team[] = [
   ...EXTRA_TEAMS
 ];
 
+const tripOf = (cityKey: string | undefined, home: Team) => {
+  const t = travelBetween(cityKey, home.id);
+  return { km: t.km, travelCost: t.cost, travelMode: t.mode, travelFrom: t.from, travelTo: t.to };
+};
+const MOVE_COST = 500;
+
 const TIERS: DivisionTier[] = ['SERIE_D', 'SERIE_C', 'SERIE_B', 'SERIE_A'];
 const PAY: Record<string, number> = { SERIE_D: 800, SERIE_C: 1500, SERIE_B: 3000, SERIE_A: 6000, FIFA_INTERNACIONAL: 12000 };
 
@@ -110,7 +118,7 @@ export interface ActiveMatch {
   wrongHarm: ('HOME' | 'AWAY')[]; big: boolean; grudgeBonus: number;
 }
 export interface NextScheduleData {
-  home: Team; away: Team; stadium: string; derbyRisk: 'BAIXO' | 'MÉDIO' | 'EXTREMO'; attendance: number; storyline: PreMatchStoryline; km?: number; travelCost?: number; big?: boolean;
+  home: Team; away: Team; stadium: string; derbyRisk: 'BAIXO' | 'MÉDIO' | 'EXTREMO'; attendance: number; storyline: PreMatchStoryline; km?: number; travelCost?: number; travelMode?: TravelMode; travelFrom?: string; travelTo?: string; big?: boolean;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -208,6 +216,7 @@ interface GameState {
   tipsSeen: string[];
   lesson: Lesson | null;
   declinesUsed: number;
+  movedSeason: number;
 
   setDifficulty: (d: Difficulty) => void;
   answerCareerEvent: (i: number) => void;
@@ -216,7 +225,8 @@ interface GameState {
   declineAssignment: () => Promise<void>;
   exportCareer: () => string;
   importCareer: (json: string) => boolean;
-  createProfile: (p: { name: string; age: number; federation: string; style: RefereeStyle }) => Promise<void>;
+  createProfile: (p: { name: string; age: number; federation: string; style: RefereeStyle; homeCity?: string }) => Promise<void>;
+  moveHome: (cityKey: string) => { ok: boolean; msg: string };
   drawNextSchedule: () => Promise<void>;
   startScheduledMatch: () => void;
   startSecondHalf: () => void;
@@ -247,7 +257,7 @@ const persistPart = (s: GameState) => ({
   season: s.season, seasonGame: s.seasonGame, fixtures: s.fixtures, seasonHistory: s.seasonHistory, inbox: s.inbox, approach: s.approach,
   teams: s.teams, matchHistory: s.matchHistory, nextMatchSchedule: s.nextMatchSchedule, careerNews: s.careerNews,
   grudges: s.grudges, difficulty: s.difficulty, seasonGoals: s.seasonGoals, rivals: s.rivals, tipsSeen: s.tipsSeen,
-  declinesUsed: s.declinesUsed, lastEventId: s.lastEventId, careerEvent: s.careerEvent
+  declinesUsed: s.declinesUsed, movedSeason: s.movedSeason, lastEventId: s.lastEventId, careerEvent: s.careerEvent
 });
 
 export const useGameStore = create<GameState>()(
@@ -366,18 +376,34 @@ export const useGameStore = create<GameState>()(
         tipsSeen: [],
         lesson: null,
         declinesUsed: 0,
+        movedSeason: 0,
 
-        createProfile: async ({ name, age, federation, style }) => {
+        createProfile: async ({ name, age, federation, style, homeCity }) => {
           set(s => ({
             isProfileCreated: true,
             referee: {
               ...s.referee,
               name: name.trim() || 'Árbitro Oficial', age: age || 26, federation: federation.trim() || 'CBF',
-              style, tier: 'SERIE_D'
+              style, tier: 'SERIE_D', homeCity: homeCity ?? DEFAULT_CITY
             }
           }));
           set(s => ({ fixtures: buildSeason('SERIE_D', s.teams, s.season, refereedCounts(s.matchHistory, s.teams)), approach: style }));
           await get().drawNextSchedule();
+        },
+
+        moveHome: cityKey => {
+          const s = get();
+          if (s.activeMatch) return { ok: false, msg: 'Termine a partida antes de se mudar.' };
+          if (s.movedSeason === s.season) return { ok: false, msg: 'Você já se mudou nesta temporada. Tente de novo na próxima.' };
+          if (cityKey === (s.referee.homeCity ?? DEFAULT_CITY)) return { ok: false, msg: 'Você já mora nessa cidade.' };
+          if (s.referee.bankBalance < MOVE_COST) return { ok: false, msg: 'Saldo insuficiente: a mudança custa R$ ' + MOVE_COST + '.' };
+          const nm = s.nextMatchSchedule;
+          set({
+            movedSeason: s.season,
+            referee: { ...s.referee, homeCity: cityKey, bankBalance: s.referee.bankBalance - MOVE_COST },
+            nextMatchSchedule: nm ? { ...nm, ...tripOf(cityKey, nm.home) } : nm
+          });
+          return { ok: true, msg: 'Você se mudou para ' + cityLabel(cityKey) + '. Custo da mudança: R$ ' + MOVE_COST + '.' };
         },
 
         drawNextSchedule: async () => {
@@ -393,7 +419,7 @@ export const useGameStore = create<GameState>()(
               home, away, stadium: home.stadiumName,
               derbyRisk: pick<'BAIXO' | 'MÉDIO' | 'EXTREMO'>(['BAIXO', 'MÉDIO', 'EXTREMO']),
               attendance: 8000 + Math.floor(Math.random() * 30000), storyline,
-              km: travelKm(home, away), travelCost: travelCost(travelKm(home, away)), big: isBigMatch(home, away)
+              ...tripOf(st.referee.homeCity, home), big: isBigMatch(home, away)
             }
           });
         },
