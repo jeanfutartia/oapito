@@ -1,0 +1,26 @@
+import type { Lesson } from '../store/careerExtras';
+
+export const TipBanner = ({ text, onClose }: { text: string; onClose: () => void }) => (
+  <div className="rounded-xl border border-sky-600/70 bg-sky-950/60 text-sky-100 p-3 text-xs flex items-start justify-between gap-3">
+    <span>💡 <b>Dica:</b> {text}</span>
+    <button onClick={onClose} className="shrink-0 px-3 py-1 rounded-lg bg-sky-700 hover:bg-sky-600 font-bold">Entendi ✕</button>
+  </div>
+);
+
+export const LessonCard = ({ lesson, onClose }: { lesson: Lesson; onClose: () => void }) => (
+  <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 z-[45] font-sans">
+    <div className={'bg-slate-900 border-2 rounded-2xl max-w-lg w-full p-4 sm:p-5 shadow-2xl text-slate-100 flex flex-col gap-3 ' + (lesson.ok ? 'border-emerald-500' : 'border-red-500')}>
+      <div className="flex items-center justify-between gap-2">
+        <b className={lesson.ok ? 'text-emerald-300' : 'text-red-300'}>{lesson.ok ? '✓ Boa decisão' : '✕ Decisão errada'}</b>
+        <span className="text-[10px] text-slate-500 uppercase tracking-wider">Entenda o lance</span>
+      </div>
+      <p className="text-sm font-bold">{lesson.title}</p>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="bg-slate-950 border border-slate-800 rounded-lg p-2"><span className="text-slate-500 block text-[10px]">Sua decisão</span><b>{lesson.yours}</b></div>
+        <div className="bg-slate-950 border border-slate-800 rounded-lg p-2"><span className="text-slate-500 block text-[10px]">Decisão certa</span><b className="text-emerald-300">{lesson.correct}</b></div>
+      </div>
+      <p className="text-xs text-slate-300 leading-relaxed bg-slate-950 border border-slate-800 rounded-lg p-3">📖 {lesson.text}</p>
+      <button onClick={onClose} className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-xs font-black">Entendi, continuar ▶</button>
+    </div>
+  </div>
+);

@@ -1,0 +1,421 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Incident, Team } from '../types/types';
+import { buildScene, extreme, joints, isLight, T_SEC } from './replayScene';
+import type { Actor, Scene, V } from './replayScene';
+
+interface CamDef { id: string; name: string; short: string; eye: (c: V, f: V) => V; tgt: (c: V, f: V) => V; fov: number }
+const CAMS: CamDef[] = [
+  { id: 'MASTER', name: 'CAM 1 • MASTER LATERAL', short: 'Master', eye: c => [c[0] - 4, c[1] - 22, 8], tgt: c => [c[0], c[1], 0.9], fov: 36 },
+  { id: 'TACTICAL', name: 'CAM 2 • TÁTICA AÉREA', short: 'Tática', eye: (_c, f) => [f[0] - 1.2, f[1], 21], tgt: (_c, f) => [f[0], f[1], 0], fov: 34 },
+  { id: 'REVERSE', name: 'CAM 3 • ATRÁS DO GOL', short: 'Atrás do gol', eye: c => [c[0] + 26, c[1], 3.4], tgt: c => [c[0], c[1], 1.2], fov: 30 },
+  { id: 'DRONE', name: 'CAM 4 • DRONE 3D', short: 'Drone', eye: (_c, f) => [f[0] - 9, f[1] - 12, 8], tgt: (_c, f) => [f[0], f[1], 0.8], fov: 40 },
+  { id: 'CLOSE', name: 'CAM 5 • CLOSE • SLOW-MO', short: 'Close', eye: (_c, f) => [f[0] - 3.6, f[1] - 7, 2.1], tgt: (_c, f) => [f[0], f[1], 0.9], fov: 30 }
+];
+
+interface Tools { lines: boolean; zone: boolean; points: boolean; labels: boolean }
+type P2 = [number, number, number] | null;
+
+function makeCam(eye: V, tgt: V, fov: number, w: number, h: number) {
+  const sub = (a: V, b: V): V => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const nrm = (a: V): V => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+  const cr = (a: V, b: V): V => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const dt = (a: V, b: V) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const fw = nrm(sub(tgt, eye));
+  const rt = nrm(cr(fw, [0, 0, 1]));
+  const up = cr(rt, fw);
+  const f = (h / 2) / Math.tan((fov * Math.PI) / 360);
+  return (v: V): P2 => {
+    const d = sub(v, eye);
+    const z = dt(d, fw);
+    if (z < 0.3) return null;
+    return [w / 2 + (dt(d, rt) / z) * f, h / 2 - (dt(d, up) / z) * f, f / z];
+  };
+}
+
+function render(ctx: CanvasRenderingContext2D, w: number, h: number, cam: CamDef, sc: Scene, t: number, tools: Tools, full: boolean) {
+  const actors = sc.actors(t);
+  const focus = sc.focus(t);
+  const eye = cam.eye(sc.center, focus);
+  const P = makeCam(eye, cam.tgt(sc.center, focus), cam.fov * sc.zoom, w, h);
+
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, '#0b1220');
+  bg.addColorStop(0.3, '#10301c');
+  bg.addColorStop(0.5, '#1b5e2b');
+  bg.addColorStop(1, '#17542a');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+  const poly = (pts: V[], fill: string) => {
+    const q = pts.map(p => P(p));
+    if (q.some(p => p === null)) return;
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = fill;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    q.forEach((p, i) => { if (p) { if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); } });
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  };
+  const L3 = (a: V, b: V, wd: number, col: string, dash = false) => {
+    ctx.strokeStyle = col;
+    ctx.lineCap = 'round';
+    ctx.setLineDash(dash ? [6, 5] : []);
+    const n = 10;
+    for (let i = 0; i < n; i++) {
+      const p0 = P([lerpN(a[0], b[0], i / n), lerpN(a[1], b[1], i / n), lerpN(a[2], b[2], i / n)]);
+      const p1 = P([lerpN(a[0], b[0], (i + 1) / n), lerpN(a[1], b[1], (i + 1) / n), lerpN(a[2], b[2], (i + 1) / n)]);
+      if (!p0 || !p1) continue;
+      ctx.lineWidth = Math.max(1, wd * p0[2]);
+      ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  };
+  const dot = (p: V, r: number, fill: string, stroke?: string) => {
+    const q = P(p);
+    if (!q) return;
+    ctx.fillStyle = fill;
+    ctx.beginPath(); ctx.arc(q[0], q[1], Math.max(1.5, r * q[2]), 0, Math.PI * 2); ctx.fill();
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.stroke(); }
+  };
+
+  // Gramado em faixas
+  const gx = sc.goalX;
+  const x0 = -48;
+  const cols = Math.ceil((gx - x0) / 5.5);
+  for (let i = 0; i < cols; i++) {
+    const xa = x0 + i * 5.5;
+    const xb = Math.min(gx, xa + 5.5);
+    for (let j = 0; j < 10; j++) {
+      const ya = -34 + j * 6.8;
+      poly([[xa, ya, 0], [xb, ya, 0], [xb, ya + 6.8, 0], [xa, ya + 6.8, 0]], i % 2 === 0 ? '#1f6b30' : '#2a8a3e');
+    }
+  }
+  // Linhas do campo
+  const wl = 0.14;
+  const white = 'rgba(255,255,255,0.85)';
+  const lines: [V, V][] = [
+    [[gx, -34, 0], [gx, 34, 0]], [[x0, -34, 0], [gx, -34, 0]], [[x0, 34, 0], [gx, 34, 0]],
+    [[gx - 16.5, -20.16, 0], [gx - 16.5, 20.16, 0]], [[gx - 16.5, -20.16, 0], [gx, -20.16, 0]], [[gx - 16.5, 20.16, 0], [gx, 20.16, 0]],
+    [[gx - 5.5, -9.16, 0], [gx - 5.5, 9.16, 0]], [[gx - 5.5, -9.16, 0], [gx, -9.16, 0]], [[gx - 5.5, 9.16, 0], [gx, 9.16, 0]]
+  ];
+  if (gx > 40) {
+    const hx = gx - 52.5;
+    lines.push([[hx, -34, 0], [hx, 34, 0]]);
+    for (let k = 0; k < 24; k++) {
+      const a0 = (k / 24) * Math.PI * 2;
+      const a1 = ((k + 1) / 24) * Math.PI * 2;
+      lines.push([[hx + Math.cos(a0) * 9.15, Math.sin(a0) * 9.15, 0], [hx + Math.cos(a1) * 9.15, Math.sin(a1) * 9.15, 0]]);
+    }
+  }
+  lines.forEach(([a, b]) => L3(a, b, wl, white));
+  if (gx < 40) {
+    // Trave e rede
+    const net = 'rgba(255,255,255,0.35)';
+    L3([gx, -3.66, 0], [gx, -3.66, 2.44], 0.12, '#f8fafc');
+    L3([gx, 3.66, 0], [gx, 3.66, 2.44], 0.12, '#f8fafc');
+    L3([gx, -3.66, 2.44], [gx, 3.66, 2.44], 0.12, '#f8fafc');
+    for (let k = 0; k <= 6; k++) {
+      const y = -3.66 + (k * 7.32) / 6;
+      L3([gx, y, 2.44], [gx + 2, y * 0.85, 1.8], 0.04, net);
+      L3([gx + 2, y * 0.85, 0], [gx + 2, y * 0.85, 1.8], 0.04, net);
+    }
+  }
+
+  // Overlays de impedimento (abaixo dos jogadores)
+  let offAtk: Actor | undefined;
+  let offDef: Actor | undefined;
+  if (sc.kind === 'OFFSIDE') {
+    offAtk = actors.find(a => a.tag === 'ATACANTE');
+    offDef = actors.find(a => a.tag === 'ÚLT. DEFENSOR');
+    if (offAtk && offDef) {
+      const ea = extreme(offAtk);
+      const ed = extreme(offDef);
+      const isOff = ea.x > ed.x;
+      const col = isOff ? '#ef4444' : '#22c55e';
+      if (tools.zone && Math.abs(ea.x - ed.x) > 0.001) {
+        poly([[ed.x, -24, 0.01], [ea.x, -24, 0.01], [ea.x, 24, 0.01], [ed.x, 24, 0.01]], isOff ? 'rgba(239,68,68,0.28)' : 'rgba(34,197,94,0.22)');
+      }
+      if (tools.lines) {
+        L3([ed.x, -24, 0.02], [ed.x, 24, 0.02], 0.1, '#38bdf8');
+        L3([ea.x, -24, 0.02], [ea.x, 24, 0.02], 0.1, col);
+      }
+    }
+  }
+
+  // Jogadores (do mais longe para o mais perto)
+  const sorted = [...actors].sort((a, b) => {
+    const da = Math.hypot(a.x - eye[0], a.y - eye[1]);
+    const db = Math.hypot(b.x - eye[0], b.y - eye[1]);
+    return db - da;
+  });
+  sorted.forEach(a => drawActor(ctx, P, a, tools.labels && full));
+
+  // Bola
+  const b = sc.ball(t);
+  const gb = P([b[0], b[1], 0]);
+  const pb = P(b);
+  if (gb && pb) {
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath(); ctx.ellipse(gb[0], gb[1], 0.14 * gb[2], 0.05 * gb[2], 0, 0, Math.PI * 2); ctx.fill();
+    dot(b, 0.12, '#ffffff', '#111827');
+  }
+
+  // Overlays acima dos jogadores
+  if (sc.kind === 'OFFSIDE' && offAtk && offDef) {
+    const ea = extreme(offAtk);
+    const ed = extreme(offDef);
+    const isOff = ea.x > ed.x;
+    const col = isOff ? '#ef4444' : '#22c55e';
+    if (tools.lines) {
+      L3(ed.p, [ed.p[0], ed.p[1], 0.02], 0.04, '#38bdf8', true);
+      L3(ea.p, [ea.p[0], ea.p[1], 0.02], 0.04, col, true);
+      dot(ed.p, 0.1, '#38bdf8', '#fff');
+      dot(ea.p, 0.1, col, '#fff');
+    }
+    if (tools.points) {
+      [offAtk, offDef].forEach(a => {
+        const j = joints(a);
+        const all: V[] = [j.head, ...j.sh, ...j.hip, ...j.knee, ...j.foot, ...j.elbow, ...j.hand];
+        all.forEach(p => dot(p, 0.05, '#facc15'));
+      });
+    }
+    if (Math.abs(t - sc.tk) < 0.0026) {
+      const pr = P(b);
+      if (pr) {
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(pr[0], pr[1], 0.5 * pr[2], 0, Math.PI * 2); ctx.stroke();
+        if (full) { ctx.fillStyle = '#facc15'; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center'; ctx.fillText('ÚLTIMO TOQUE', Math.max(60, Math.min(w - 60, pr[0])), pr[1] - 0.7 * pr[2] - 4); }
+      }
+    }
+  } else if (sc.contact && tools.lines && Math.abs(t - sc.tk) < 0.2) {
+    const pr = P(sc.contact);
+    if (pr) {
+      const pulse = 0.25 + ((t - sc.tk + 0.2) % 0.1) * 4;
+      ctx.strokeStyle = 'rgba(239,68,68,0.95)';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(pr[0], pr[1], pulse * pr[2], 0, Math.PI * 2); ctx.stroke();
+      dot(sc.contact, 0.08, '#ef4444', '#fff');
+      if (full) { ctx.fillStyle = '#fca5a5'; ctx.font = 'bold 12px system-ui'; ctx.textAlign = 'center'; ctx.fillText('PONTO DE CONTATO', Math.max(70, Math.min(w - 70, pr[0])), pr[1] + (pulse + 0.2) * pr[2] + 14); }
+    }
+  }
+}
+
+const lerpN = (a: number, b: number, t: number) => a + (b - a) * t;
+
+function drawActor(ctx: CanvasRenderingContext2D, P: (v: V) => P2, a: Actor, labels: boolean) {
+  const j = joints(a);
+  const g = P([a.x, a.y, 0]);
+  if (!g) return;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath(); ctx.ellipse(g[0], g[1], 0.55 * g[2], 0.2 * g[2], 0, 0, Math.PI * 2); ctx.fill();
+  const line = (p: V, q: V, wd: number, col: string) => {
+    const A = P(p);
+    const B = P(q);
+    if (!A || !B) return;
+    ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, wd * A[2]); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke();
+  };
+  const sock = a.kit;
+  const cx = Math.cos(a.h) * 0.22;
+  const cy = Math.sin(a.h) * 0.22;
+  for (const s of [0, 1]) {
+    line(j.hip[s], j.knee[s], 0.16, a.shorts);
+    line(j.knee[s], j.foot[s], 0.11, sock);
+    line(j.foot[s], [j.foot[s][0] + cx, j.foot[s][1] + cy, j.foot[s][2]], 0.13, '#0b0f19');
+  }
+  line(j.hip[0], j.hip[1], 0.24, a.shorts);
+  const tq = [j.sh[0], j.sh[1], j.hip[1], j.hip[0]].map(p => P(p));
+  if (!tq.some(p => p === null)) {
+    ctx.fillStyle = a.kit; ctx.strokeStyle = 'rgba(15,23,42,0.8)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    tq.forEach((p, i) => { if (p) { if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); } });
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    const mid = P([(j.sh[0][0] + j.hip[1][0]) / 2, (j.sh[0][1] + j.hip[1][1]) / 2, (j.sh[0][2] + j.hip[1][2]) / 2]);
+    if (mid) {
+      ctx.fillStyle = isLight(a.kit) ? '#0f172a' : '#ffffff';
+      ctx.font = 'bold ' + Math.max(6, 0.3 * mid[2]) + 'px system-ui';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(a.num), mid[0], mid[1]);
+    }
+  }
+  for (const s of [0, 1]) { line(j.sh[s], j.elbow[s], 0.08, a.skin); line(j.elbow[s], j.hand[s], 0.07, a.skin); }
+  const hp = P(j.head);
+  if (hp) {
+    ctx.fillStyle = a.skin;
+    ctx.beginPath(); ctx.arc(hp[0], hp[1], 0.12 * hp[2], 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1b1b1b';
+    ctx.beginPath(); ctx.arc(hp[0], hp[1] - 0.01 * hp[2], 0.125 * hp[2], Math.PI, 0); ctx.fill();
+    if (labels) {
+      const txt = a.tag + ' #' + a.num;
+      ctx.font = 'bold 10px system-ui';
+      const tw = ctx.measureText(txt).width + 8;
+      const ly = hp[1] - 0.3 * hp[2] - 12 - (a.tag === 'ÚLT. DEFENSOR' ? 17 : 0);
+      ctx.fillStyle = 'rgba(15,23,42,0.85)';
+      ctx.fillRect(hp[0] - tw / 2, ly, tw, 15);
+      ctx.fillStyle = '#e2e8f0'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(txt, hp[0], ly + 8);
+    }
+  }
+}
+
+interface Props { incident: Incident; homeTeam: Team; awayTeam: Team }
+
+export const VarReplay = ({ incident, homeTeam, awayTeam }: Props) => {
+  const atk = incident.attackingTeam === 'HOME' ? homeTeam : awayTeam;
+  const def = incident.attackingTeam === 'HOME' ? awayTeam : homeTeam;
+  const scene = useMemo(() => buildScene(incident, atk, def), [incident, atk, def]);
+  const [t, setT] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [speed, setSpeed] = useState(1);
+  const [cam, setCam] = useState(scene.kind === 'OFFSIDE' ? 1 : 0);
+  const [tools, setTools] = useState<Tools>({ lines: true, zone: true, points: false, labels: true });
+  const tRef = useRef(0);
+  const live = useRef({ playing, speed, cam, tools });
+  live.current = { playing, speed, cam, tools };
+  const mainRef = useRef<HTMLCanvasElement | null>(null);
+  const thumbs = useRef<(HTMLCanvasElement | null)[]>([]);
+
+  useEffect(() => {
+    let raf = 0;
+    let last = performance.now();
+    let n = 0;
+    const frame = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const s = live.current;
+      if (s.playing) {
+        tRef.current = Math.min(1, tRef.current + (dt * s.speed) / T_SEC);
+        if (tRef.current >= 1) setPlaying(false);
+      }
+      const mc = mainRef.current?.getContext('2d');
+      if (mc) render(mc, 960, 540, CAMS[s.cam], scene, tRef.current, s.tools, true);
+      thumbs.current.forEach((cv, i) => {
+        const c = cv?.getContext('2d');
+        if (c) render(c, 224, 126, CAMS[i], scene, tRef.current, s.tools, false);
+      });
+      if (n++ % 2 === 0) setT(tRef.current);
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [scene]);
+
+  const goTo = (v: number) => { const c = Math.max(0, Math.min(1, v)); tRef.current = c; setT(c); };
+  const step = (d: number) => { setPlaying(false); goTo(Math.round(tRef.current / 0.005) * 0.005 + d); };
+  const snapKick = () => { setPlaying(false); goTo(scene.tk); };
+  const pickCam = (i: number) => { setCam(i); if (CAMS[i].id === 'CLOSE') setSpeed(0.25); };
+
+  const sec = t * T_SEC;
+  const tcode = incident.minute + ':' + String(Math.floor(sec)).padStart(2, '0') + '.' + String(Math.floor((sec % 1) * 1000)).padStart(3, '0');
+  const acts = scene.actors(t);
+  const a = acts.find(x => x.tag === 'ATACANTE');
+  const d = acts.find(x => x.tag === 'ÚLT. DEFENSOR');
+  const off = scene.kind === 'OFFSIDE' && a && d ? (() => { const ea = extreme(a); const ed = extreme(d); return { cm: (ea.x - ed.x) * 100, ap: ea.part, dp: ed.part }; })() : null;
+  const atKick = Math.abs(t - scene.tk) < 0.0026;
+
+  const toolBtn = (k: keyof Tools, label: string) => (
+    <button key={k} onClick={() => setTools({ ...tools, [k]: !tools[k] })}
+      className={'px-2.5 py-1 rounded-lg text-[11px] font-bold border transition ' + (tools[k] ? 'bg-sky-700 border-sky-400 text-white' : 'bg-slate-800 border-slate-700 text-slate-400')}>
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 font-mono">
+      <div className="lg:col-span-2 flex flex-col gap-2">
+        <div className="relative rounded-xl overflow-hidden border border-slate-700 bg-black">
+          <canvas ref={mainRef} width={960} height={540} className="w-full h-auto block" />
+          <div className="absolute top-2 left-2 flex items-center gap-2 text-[11px]">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+            <span className="bg-red-600 text-white font-black px-2 py-0.5 rounded tracking-wider">{CAMS[cam].name}</span>
+            <span className="bg-black/70 text-emerald-300 font-bold px-2 py-0.5 rounded">{tcode}</span>
+            {speed < 1 && <span className="bg-black/70 text-amber-300 font-bold px-2 py-0.5 rounded">SLOW-MO {speed}x</span>}
+          </div>
+          <div className="absolute top-2 right-2 text-[10px] bg-black/70 text-slate-200 font-bold px-2 py-0.5 rounded">VAR • {scene.title}</div>
+          {off && (
+            <div className="absolute bottom-2 left-2 bg-slate-950/90 border border-sky-500/60 rounded-lg px-3 py-2 text-[11px] flex flex-col gap-0.5">
+              <span className="text-sky-300 font-black tracking-wider">SEMI-AUTOMATED OFFSIDE</span>
+              <span className="text-slate-200">Atacante: <b className="text-red-300">{off.ap}</b> • Defensor: <b className="text-sky-300">{off.dp}</b></span>
+              <span className={'text-lg font-black ' + (off.cm > 0 ? 'text-red-400' : 'text-emerald-400')}>
+                {off.cm > 0 ? '+' : ''}{off.cm.toFixed(1)} cm {off.cm > 0 ? 'EM IMPEDIMENTO' : 'POSIÇÃO LEGAL'}
+              </span>
+              <span className={atKick ? 'text-emerald-300 font-bold' : 'text-amber-300'}>
+                {atKick ? '✓ Frame do último toque confirmado' : 'Frame atual não é o do toque — a medida não vale'}
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button onClick={() => { goTo(0); setPlaying(true); }} className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold hover:bg-slate-700">⏮</button>
+            <button onClick={() => step(-0.005)} className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold hover:bg-slate-700">◀ frame</button>
+            <button onClick={() => { if (t >= 1) goTo(0); setPlaying(!playing); }} className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-black">{playing ? '⏸ Pausar' : '▶ Reproduzir'}</button>
+            <button onClick={() => step(0.005)} className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold hover:bg-slate-700">frame ▶</button>
+            <button onClick={snapKick} className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black text-xs font-black">🎯 Ir ao lance-chave</button>
+            <span className="ml-auto flex items-center gap-1 text-[11px] text-slate-400">
+              Velocidade
+              {[1, 0.5, 0.25].map(v => (
+                <button key={v} onClick={() => setSpeed(v)} className={'px-2 py-1 rounded-lg border font-bold ' + (speed === v ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-slate-800 border-slate-700 text-slate-300')}>{v}x</button>
+              ))}
+            </span>
+          </div>
+          <div className="relative">
+            <input type="range" min={0} max={1} step={0.005} value={t}
+              onChange={e => { setPlaying(false); goTo(Number(e.target.value)); }}
+              className="w-full h-2 accent-emerald-500 cursor-pointer" />
+            <span className="absolute -top-1 w-0.5 h-4 bg-amber-400 pointer-events-none" style={{ left: 'calc(' + scene.tk * 100 + '% - 1px)' }} title="Lance-chave" />
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {scene.kind === 'OFFSIDE' && toolBtn('lines', '📏 Linhas 3D')}
+            {scene.kind === 'OFFSIDE' && toolBtn('zone', '🟥 Faixa')}
+            {scene.kind !== 'OFFSIDE' && toolBtn('lines', '🎯 Marcador de contato')}
+            {toolBtn('points', '🦴 Pontos do corpo')}
+            {toolBtn('labels', '🏷️ Nomes')}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-5 gap-1.5">
+          {CAMS.map((c, i) => (
+            <button key={c.id} onClick={() => pickCam(i)}
+              className={'relative rounded-lg overflow-hidden border-2 transition ' + (cam === i ? 'border-emerald-400' : 'border-slate-700 hover:border-slate-500')}>
+              <canvas ref={el => { thumbs.current[i] = el; }} width={224} height={126} className="w-full h-auto block bg-black" />
+              <span className="absolute bottom-0 inset-x-0 bg-black/75 text-[10px] font-bold py-0.5 text-slate-200">{c.short}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-col gap-2 text-xs">
+          <span className="text-[11px] font-black text-amber-400 uppercase tracking-wider">Dados do lance</span>
+          {off && (
+            <>
+              <Row label="Margem no frame atual" value={(off.cm > 0 ? '+' : '') + off.cm.toFixed(1) + ' cm'} tone={off.cm > 0 ? 'bad' : 'ok'} />
+              <Row label="Ponto avançado • ataque" value={off.ap} />
+              <Row label="Ponto avançado • defesa" value={off.dp} />
+              <Row label="Último toque confirmado" value={atKick ? 'SIM' : 'NÃO'} tone={atKick ? 'ok' : 'warn'} />
+            </>
+          )}
+          {scene.metrics.map(m => <Row key={m.label} label={m.label} value={m.value} tone={m.tone} />)}
+        </div>
+        {scene.kind === 'OFFSIDE' && (
+          <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-[11px] text-slate-400 leading-relaxed">
+            <b className="text-slate-200">Como medir:</b> use 🎯 para saltar ao último toque (marcador amarelo na linha do tempo) ou ande frame a frame (20 ms cada).
+            Fora do frame do toque o atacante já correu e a margem muda mais de 1 m por 200 ms. Compare com as outras câmeras antes de decidir.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const Row = ({ label, value, tone }: { label: string; value: string; tone?: 'ok' | 'bad' | 'warn' }) => (
+  <div className="flex justify-between gap-2 border-b border-slate-800/70 pb-1">
+    <span className="text-slate-400">{label}</span>
+    <span className={'font-bold text-right ' + (tone === 'bad' ? 'text-red-400' : tone === 'ok' ? 'text-emerald-400' : tone === 'warn' ? 'text-amber-300' : 'text-slate-100')}>{value}</span>
+  </div>
+);

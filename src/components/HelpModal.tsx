@@ -1,0 +1,62 @@
+import { GLOSSARY } from '../store/careerLogic';
+
+interface Props { onClose: () => void }
+
+const Section = ({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) => (
+  <div className="bg-slate-950 border border-slate-800 rounded-xl p-3">
+    <b className="text-sm">{icon} {title}</b>
+    <p className="text-xs text-slate-300 leading-relaxed mt-1">{children}</p>
+  </div>
+);
+
+export const HelpModal = ({ onClose }: Props) => (
+  <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 z-[60] font-sans">
+    <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full p-4 sm:p-6 shadow-2xl text-slate-100 flex flex-col gap-3 max-h-[90vh] overflow-y-auto">
+      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h2 className="text-lg font-black text-amber-400">❓ Como jogar</h2>
+        <button onClick={onClose} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-bold">Fechar</button>
+      </div>
+      <Section icon="🎯" title="Seu objetivo">
+        Apite 6 jogos por temporada. A média das notas decide: acima de 9,0 você sobe de divisão; abaixo de 7,0 você desce. Cada decisão errada, tumulto ou conduta ruim derruba a nota.
+      </Section>
+      <Section icon="🔥" title="Pressão e apito forte">
+        Faltas, cartões e gols aumentam a pressão do jogo (barra no painel). Acima de 80% pode estourar um <b>tumulto</b>, com amarelos para os dois times e queda na nota. Use o <b>📢 apito forte</b> quando passar de 55% para esfriar o jogo (máximo 5 vezes, com intervalo de 6 minutos). Sem necessidade, os jogadores reclamam.
+      </Section>
+      <Section icon="⚽" title="Pênaltis">
+        Depois de marcar o pênalti, confira o goleiro e a área: mande o goleiro voltar à linha e afaste os jogadores antes de apitar a cobrança. Apitar com irregularidade custa nota.
+      </Section>
+      <Section icon="🖥️" title="VAR e impedimento">
+        Nos lances decisivos, use as câmeras do replay. No impedimento, são 3 passos: (1) ande quadro a quadro até o pé tocar a bola e clique em <b>📍 Marcar frame do passe</b>; (2) confira os pontos mais adiantados do atacante e do defensor e confirme; (3) clique em <b>📏 Traçar linhas</b>. Na mão na bola, observe o ângulo do braço e a distância do chute.
+      </Section>
+      <Section icon="📋" title="Postura, capitães e técnicos">
+        Antes do jogo escolha a postura (dialogador, preventivo, disciplinador ou rigoroso): ela muda a frequência de protestos e de cartões. Durante a partida, capitães e técnicos vão falar com você: explicar com calma, advertir ou punir, conforme a gravidade.
+      </Section>
+      <Section icon="👀" title="Jogadores com personalidade">
+        Cada time tem um 🎖️ capitão, 💢 jogadores de jogo duro, 😏 provocadores e 🎭 quem cai fácil. Quem joga duro faz mais faltas e leva cartão mais fácil. Quem já cometeu várias faltas tem cartão mais provável. Veja o painel "Fique de olho".
+      </Section>
+      <Section icon="😠" title="Relação com os clubes">
+        Se você erra contra um clube, ele fica contrariado (Desconfiado, Irritado ou Furioso). Nos próximos jogos o clima esquenta e a coletiva traz perguntas duras. Bons jogos acalmam os clubes aos poucos.
+      </Section>
+      <Section icon="🎯" title="Metas, eventos e escala">
+        Cada temporada traz 3 metas com prêmio em dinheiro e reputação. Entre os jogos podem surgir acontecimentos (cursos, boatos, convites). Jogos grandes pagam mais, viagens custam dinheiro, e você pode recusar uma escala por temporada, perdendo reputação.
+      </Section>
+      <Section icon="🎚️" title="Dificuldade e treino">
+        <b>Iniciante</b> mostra dicas e explica cada lance. <b>Normal</b> explica quando você erra. <b>Especialista</b> não ajuda, esquenta mais e pune mais os erros. Mude na tela inicial.
+      </Section>
+      <Section icon="⭐" title="Melhores momentos e salvar em arquivo">
+        Na súmula, a aba "Melhores momentos" refaz gols e lances do VAR em 3D. Na aba Carreira você salva a carreira em um arquivo e carrega depois, para não perder o progresso.
+      </Section>
+      <div className="bg-slate-950 border border-slate-800 rounded-xl p-3">
+        <b className="text-sm">📖 Glossário rápido</b>
+        <dl className="mt-2 flex flex-col gap-1.5 text-xs">
+          {GLOSSARY.map(([term, def]) => (
+            <div key={term}><dt className="inline font-bold text-amber-300">{term}: </dt><dd className="inline text-slate-300">{def}</dd></div>
+          ))}
+        </dl>
+      </div>
+      <Section icon="📅" title="Calendário e carreira">
+        Cada divisão tem 12 clubes. Você apita um jogo por rodada, com rodízio de equipes. Veja o calendário, a tabela, as súmulas, a caixa de entrada e as conquistas nas abas.
+      </Section>
+    </div>
+  </div>
+);

@@ -1,0 +1,150 @@
+﻿import { useState } from 'react';
+import type { RefereeStyle } from '../types/types';
+import { testGeminiApiKey } from '../services/geminiService';
+
+interface Props {
+  onSave: (data: { name: string; age: number; federation: string; style: RefereeStyle; apiKey: string }) => void;
+}
+
+export const ProfileModal = ({ onSave }: Props) => {
+  const [name, setName] = useState('Carlos Silva');
+  const [age, setAge] = useState(26);
+  const [federation, setFederation] = useState('Federação Paulista de Futebol (FPF)');
+  const [style, setStyle] = useState<RefereeStyle>('DIALOGADOR');
+  const [apiKey, setApiKey] = useState('');
+  const [testingKey, setTestingKey] = useState(false);
+  const [validationResult, setValidationResult] = useState<{ tested: boolean; success: boolean; msg: string }>({
+    tested: false,
+    success: false,
+    msg: ''
+  });
+
+  const handleTestKey = async () => {
+    if (!apiKey.trim()) {
+      setValidationResult({ tested: true, success: false, msg: 'Informe a chave antes de testar.' });
+      return;
+    }
+    setTestingKey(true);
+    const res = await testGeminiApiKey(apiKey.trim());
+    setTestingKey(false);
+    setValidationResult({ tested: true, success: res.success, msg: res.message });
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSave({ name, age, federation, style, apiKey });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 z-50">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl text-slate-100 flex flex-col gap-4 font-sans">
+        
+        <div className="border-b border-slate-800 pb-3">
+          <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded border border-emerald-800">
+            CADASTRO OFICIAL CBF / IFAB
+          </span>
+          <h2 className="text-lg font-black text-white mt-1">FICHA DO ÁRBITRO • INÍCIO NA SÉRIE D</h2>
+          <p className="text-xs text-slate-400">Configure sua identidade profissional antes da estreia</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3 text-xs">
+          <div>
+            <label className="block text-slate-300 font-bold mb-1">Nome Completo</label>
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={e => setName(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-100 focus:outline-none focus:border-emerald-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-300 font-bold mb-1">Idade de Estreia</label>
+              <input
+                type="number"
+                min={21}
+                max={48}
+                value={age}
+                onChange={e => setAge(Number(e.target.value))}
+                className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-100 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-300 font-bold mb-1">Estilo de Conduta</label>
+              <select
+                value={style}
+                onChange={e => setStyle(e.target.value as RefereeStyle)}
+                className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-100 focus:outline-none focus:border-emerald-500"
+              >
+                <option value="DIALOGADOR">Dialogador (Conversa)</option>
+                <option value="RIGOROSO">Rigoroso (Cartão Fácil)</option>
+                <option value="DISCIPLINADOR">Disciplinador (Firme)</option>
+                <option value="PREVENTIVO">Preventivo (Apito Rápido)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-slate-300 font-bold mb-1">Federação de Origem</label>
+            <input
+              type="text"
+              value={federation}
+              onChange={e => setFederation(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-slate-100 focus:outline-none focus:border-emerald-500"
+            />
+          </div>
+
+          {/* Área com Validação Real da Chave do Gemini */}
+          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col gap-2">
+            <div className="flex justify-between items-center">
+              <label className="text-amber-400 font-bold">Chave de API do Gemini (Google AI)</label>
+              <button
+                type="button"
+                onClick={handleTestKey}
+                disabled={testingKey}
+                className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded font-bold border border-slate-700 transition"
+              >
+                {testingKey ? 'Testando...' : '🔍 Validar Chave'}
+              </button>
+            </div>
+
+            <input
+              type="password"
+              placeholder="Cole sua API Key do Gemini aqui..."
+              value={apiKey}
+              onChange={e => {
+                setApiKey(e.target.value);
+                setValidationResult({ tested: false, success: false, msg: '' });
+              }}
+              className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-slate-100 font-mono text-xs focus:outline-none focus:border-amber-500"
+            />
+
+            {validationResult.tested && (
+              <div className={`p-2 rounded text-[11px] font-bold ${
+                validationResult.success 
+                  ? 'bg-emerald-950 border border-emerald-600 text-emerald-300' 
+                  : 'bg-red-950 border border-red-600 text-red-300'
+              }`}>
+                {validationResult.success ? '✓ ' : '✕ '} {validationResult.msg}
+              </div>
+            )}
+
+            <span className="text-[10px] text-slate-500">
+              Gera rádio VAR, narrações e pré-jogo dinâmicos. Caso não insira, o simulador usa geradores automáticos sem travar.
+            </span>
+          </div>
+
+          <button
+            type="submit"
+            className="w-full mt-2 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition shadow-lg shadow-emerald-600/30"
+          >
+            Confirmar e Iniciar Temporada na Série D
+          </button>
+        </form>
+
+      </div>
+    </div>
+  );
+};

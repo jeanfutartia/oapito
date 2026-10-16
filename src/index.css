@@ -1,0 +1,154 @@
+﻿body {
+  margin: 0;
+  background-color: #0b0f19;
+  color: #f3f4f6;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  user-select: none;
+}
+
+
+/* o-apito-mobile: ajustes para celular e telas pequenas */
+html { -webkit-text-size-adjust: 100%; }
+body { -webkit-tap-highlight-color: transparent; touch-action: manipulation; overscroll-behavior-y: none; padding-bottom: env(safe-area-inset-bottom); }
+canvas { touch-action: manipulation; }
+.fixed.inset-0:not(.goal-overlay) { overflow-y: auto; -webkit-overflow-scrolling: touch; align-items: flex-start !important; }
+.fixed.inset-0:not(.goal-overlay) > div { margin-top: auto; margin-bottom: auto; max-width: 100%; }
+@media (max-width: 640px) {
+  input:not([type='range']), select, textarea { font-size: 16px !important; }
+  button { min-height: 36px; }
+}
+
+
+/* o-apito-polish: animações e acabamento */
+@keyframes oa-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.animate-fade-in { animation: oa-fade .35s ease both; }
+main > * { animation: oa-fade .3s ease both; }
+button { transition: transform .12s ease, background-color .2s ease, border-color .2s ease, opacity .2s ease; }
+button:active:not(:disabled) { transform: scale(.97); }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { * { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+
+/* o-apito-theme: paleta de cores (azul-noite, verde-menta e dourado) */
+:root {
+  --color-slate-50: #f4f7fc;
+  --color-slate-100: #e8eef8;
+  --color-slate-200: #d3dcec;
+  --color-slate-300: #b0bdd6;
+  --color-slate-400: #8394b5;
+  --color-slate-500: #5f7194;
+  --color-slate-600: #44557a;
+  --color-slate-700: #2d3b5c;
+  --color-slate-800: #1d2845;
+  --color-slate-900: #121b32;
+  --color-slate-950: #0a1020;
+  --color-emerald-50: #e6fbf3;
+  --color-emerald-100: #c4f5e0;
+  --color-emerald-200: #7ae8c0;
+  --color-emerald-300: #3fd9a4;
+  --color-emerald-400: #1fc08a;
+  --color-emerald-500: #14a174;
+  --color-emerald-600: #0f805c;
+  --color-emerald-700: #0d6249;
+  --color-emerald-800: #0b4a38;
+  --color-emerald-900: #073a2c;
+  --color-emerald-950: #052d22;
+  --color-green-50: #e6fbf3;
+  --color-green-100: #c4f5e0;
+  --color-green-200: #7ae8c0;
+  --color-green-300: #3fd9a4;
+  --color-green-400: #1fc08a;
+  --color-green-500: #14a174;
+  --color-green-600: #0f805c;
+  --color-green-700: #0d6249;
+  --color-green-800: #0b4a38;
+  --color-green-900: #073a2c;
+  --color-green-950: #052d22;
+  --color-amber-50: #fff8e1;
+  --color-amber-100: #fdf0c4;
+  --color-amber-200: #fde9a8;
+  --color-amber-300: #fbd774;
+  --color-amber-400: #f6c14a;
+  --color-amber-500: #eaa71f;
+  --color-amber-600: #c98410;
+  --color-amber-700: #a1640d;
+  --color-amber-800: #7d4c10;
+  --color-amber-900: #5e3a10;
+  --color-amber-950: #36200a;
+  --color-yellow-50: #fffbe6;
+  --color-yellow-100: #fef3b8;
+  --color-yellow-200: #fde68a;
+  --color-yellow-300: #fcd94a;
+  --color-yellow-400: #facc15;
+  --color-yellow-500: #e6b400;
+  --color-yellow-600: #c99700;
+  --color-yellow-700: #a07800;
+  --color-yellow-800: #7d5d0a;
+  --color-yellow-900: #5f4609;
+  --color-yellow-950: #3a2a05;
+  --color-red-50: #fff1f2;
+  --color-red-100: #ffe0e3;
+  --color-red-200: #fecdd3;
+  --color-red-300: #fda4ad;
+  --color-red-400: #f87884;
+  --color-red-500: #ef4d5f;
+  --color-red-600: #d93248;
+  --color-red-700: #b52239;
+  --color-red-800: #8f1f33;
+  --color-red-900: #721d2f;
+  --color-red-950: #400c18;
+  --color-cyan-50: #ecfcff;
+  --color-cyan-100: #cff6fc;
+  --color-cyan-200: #a3ecf8;
+  --color-cyan-300: #7ee0f2;
+  --color-cyan-400: #3cc9e6;
+  --color-cyan-500: #16b0d1;
+  --color-cyan-600: #0e8fb0;
+  --color-cyan-700: #0f7490;
+  --color-cyan-800: #115b72;
+  --color-cyan-900: #124b5e;
+  --color-cyan-950: #082d3a;
+  --color-sky-50: #eff8ff;
+  --color-sky-100: #dbeefe;
+  --color-sky-200: #bfe0fd;
+  --color-sky-300: #8fd0fb;
+  --color-sky-400: #55b6f6;
+  --color-sky-500: #2d9bec;
+  --color-sky-600: #1d7fcf;
+  --color-sky-700: #1a65a6;
+  --color-sky-800: #1a5185;
+  --color-sky-900: #1b436b;
+  --color-sky-950: #0f2a45;
+  --color-indigo-50: #eef1ff;
+  --color-indigo-100: #dfe4ff;
+  --color-indigo-200: #c6cdff;
+  --color-indigo-300: #aab4fb;
+  --color-indigo-400: #818cf8;
+  --color-indigo-500: #6670ee;
+  --color-indigo-600: #5058d8;
+  --color-indigo-700: #4146b3;
+  --color-indigo-800: #363c8d;
+  --color-indigo-900: #2d3270;
+  --color-indigo-950: #1b1e47;
+}
+.app-bg {
+  background:
+    radial-gradient(900px 520px at 12% -8%, rgba(31, 192, 138, 0.14), transparent 60%),
+    radial-gradient(800px 480px at 100% 0%, rgba(102, 112, 238, 0.12), transparent 60%),
+    radial-gradient(700px 500px at 50% 115%, rgba(246, 193, 74, 0.07), transparent 60%),
+    #0a1020;
+  background-attachment: fixed;
+}
+header { backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom-color: rgba(131, 148, 181, 0.18) !important; }
+.bg-slate-900 { box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035) inset, 0 10px 28px rgba(2, 6, 16, 0.38); }
+.bg-emerald-600 { background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0)); }
+.bg-red-600 { background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0)); }
+.bg-indigo-600 { background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0)); }
+.border-slate-800 { border-color: rgba(131, 148, 181, 0.16); }
+::-webkit-scrollbar-thumb { background: #2d3b5c; }
+
+
+/* o-apito-brand: fonte do logo */
+.brand-font { font-family: 'Saira Condensed', 'Arial Narrow', Impact, sans-serif; font-style: italic; font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase; }

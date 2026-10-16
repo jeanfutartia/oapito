@@ -1,0 +1,304 @@
+﻿import type {
+  DecisionType,
+  Incident,
+  IncidentCategory,
+  IncidentPitchZone,
+  IncidentScene,
+  OffsideData,
+  ScenePlayer,
+  Team
+} from '../types/types';
+
+type XY = [number, number];
+
+export const DECISION_LABEL: Record<DecisionType, string> = {
+  PLAY_ON: 'Seguir o jogo',
+  FOUL: 'Falta simples',
+  YELLOW_CARD: 'Cartão amarelo',
+  RED_CARD: 'Cartão vermelho',
+  PENALTY: 'Pênalti',
+  PENALTY_YELLOW: 'Pênalti + amarelo',
+  PENALTY_RED: 'Pênalti + vermelho',
+  GOAL_VALID: 'Gol válido',
+  GOAL_DISALLOWED: 'Gol anulado'
+};
+
+const pl = (
+  id: string,
+  side: 'ATT' | 'DEF',
+  number: number,
+  role: string,
+  from: XY,
+  to: XY,
+  extra: Partial<ScenePlayer> = {}
+): ScenePlayer => ({ id, side, number, role, from, to, ...extra });
+
+const GK: ScenePlayer = pl('gk', 'DEF', 1, 'GOLEIRO', [104, 34], [104, 34], { gk: true });
+
+const offsideData = (kickFrame: number, deltaCmAtKick: number): OffsideData => ({
+  kickFrame,
+  deltaCmAtKick,
+  closingCmPerFrame: 3,
+  passerNumber: 8,
+  attackerNumber: 9,
+  defenderNumber: 3,
+  attackerParts: [
+    { name: 'Ombro', offsetCm: -24, legal: true },
+    { name: 'Joelho', offsetCm: -9, legal: true },
+    { name: 'Pé', offsetCm: 0, legal: true },
+    { name: 'Mão/Braço', offsetCm: 14, legal: false }
+  ],
+  defenderParts: [
+    { name: 'Chuteira', offsetCm: 0, legal: true },
+    { name: 'Joelho', offsetCm: -7, legal: true },
+    { name: 'Ombro', offsetCm: -27, legal: true }
+  ]
+});
+
+interface Template {
+  category: IncidentCategory;
+  title: (att: Team, def: Team) => string;
+  description: (att: Team, def: Team) => string;
+  context: string;
+  recommended: DecisionType;
+  acceptable: DecisionType[];
+  fieldDecision: DecisionType;
+  goalPending: boolean;
+  offenderSide: 'ATT' | 'DEF';
+  offender: number;
+  victim: number;
+  ifab: string;
+  dialogue: string;
+  zone: IncidentPitchZone;
+  scene?: IncidentScene;
+  offside?: OffsideData;
+}
+
+const TEMPLATES: Template[] = [
+  {
+    category: 'IMPEDIMENTO_3D',
+    title: (att) => `Gol do ${att.shortName} sob checagem de impedimento`,
+    description: (att, def) =>
+      `Bola na rede do ${def.name}. A cabine sincroniza o frame do último toque do passador e traça as linhas semi-automáticas entre o corpo do atacante do ${att.name} e o último defensor.`,
+    context: 'Checagem de impedimento semi-automática.',
+    recommended: 'GOAL_VALID',
+    acceptable: ['GOAL_VALID'],
+    fieldDecision: 'GOAL_VALID',
+    goalPending: true,
+    offenderSide: 'ATT',
+    offender: 9,
+    victim: 3,
+    ifab: 'Regra 11: conta a posição no momento do primeiro contato do passador com a bola. Mãos e braços não contam; ombro, joelho e pé sim. Estar alinhado ou atrás da linha é posição legal.',
+    dialogue: '[VAR]: "Ponto do passe sincronizado. Linhas disponíveis. A análise é sua."',
+    zone: { xPercent: 80, yPercent: 45, name: 'Linha Defensiva / Meia-Lua' },
+    offside: offsideData(48, -3.4)
+  },
+  {
+    category: 'IMPEDIMENTO_3D',
+    title: (att) => `Gol do ${att.shortName} sob checagem de impedimento`,
+    description: (att, def) =>
+      `Finalização convertida pelo ${att.name}. A cabine busca o frame exato do passe para verificar o alinhamento contra a linha defensiva do ${def.name}.`,
+    context: 'Checagem de impedimento semi-automática.',
+    recommended: 'GOAL_DISALLOWED',
+    acceptable: ['GOAL_DISALLOWED'],
+    fieldDecision: 'GOAL_VALID',
+    goalPending: true,
+    offenderSide: 'ATT',
+    offender: 9,
+    victim: 3,
+    ifab: 'Regra 11: qualquer parte legal do corpo do atacante mais próxima da linha de meta que o penúltimo defensor, no instante do passe, é impedimento.',
+    dialogue: '[VAR]: "Linhas calibradas no frame do passe. Veja o delta na tela."',
+    zone: { xPercent: 82, yPercent: 40, name: 'Linha Defensiva / Grande Área' },
+    offside: offsideData(55, 8.6)
+  },
+  {
+    category: 'GOL_POLÊMICO',
+    title: (att) => `Gol do ${att.shortName}: possível falta no ataque`,
+    description: (att, def) =>
+      `Antes do gol do ${att.name}, o camisa 7 disputa a bola nas costas do camisa 5 do ${def.name}, que cai.`,
+    context: 'Checagem da fase de ataque (APP) antes do gol.',
+    recommended: 'GOAL_DISALLOWED',
+    acceptable: ['GOAL_DISALLOWED'],
+    fieldDecision: 'GOAL_VALID',
+    goalPending: true,
+    offenderSide: 'ATT',
+    offender: 7,
+    victim: 5,
+    ifab: 'Regra 12: empurrão ou carga imprudente na construção da jogada anula o gol, pois a falta ocorre antes do gol.',
+    dialogue: '[VAR]: "Fase de ataque revisada. Há contato do 7 nas costas do 5. Imagens disponíveis."',
+    zone: { xPercent: 66, yPercent: 40, name: 'Terço Final' },
+    scene: {
+      players: [
+        pl('a7', 'ATT', 7, 'CAMISA 7', [70, 26], [78, 28]),
+        pl('d5', 'DEF', 5, 'CAMISA 5', [74, 31], [75, 29], { reacts: 'FALL' }),
+        pl('a9', 'ATT', 9, 'ARTILHEIRO', [90, 37], [101, 34]),
+        pl('d4', 'DEF', 4, 'ZAGUEIRO', [92, 30], [96, 32]),
+        GK
+      ],
+      ballFrom: [72, 27],
+      ballTo: [103, 34],
+      contactFrame: 38,
+      focusPlayerId: 'a7',
+      contactLabel: 'Empurrão do #7 nas costas do #5'
+    }
+  },
+  {
+    category: 'PENALTI_DISPUTA',
+    title: (att, def) => `Disputa na área: ${att.shortName} x ${def.shortName}`,
+    description: (att, def) =>
+      `O atacante camisa 9 do ${att.name} cai na área após disputa com o zagueiro camisa 4 do ${def.name}. Em campo foi assinalado pênalti.`,
+    context: 'Checagem de possível simulação ou contato marginal.',
+    recommended: 'PLAY_ON',
+    acceptable: ['PLAY_ON'],
+    fieldDecision: 'PENALTY',
+    goalPending: false,
+    offenderSide: 'ATT',
+    offender: 9,
+    victim: 4,
+    ifab: 'Regra 12: contato marginal e movimento natural dos atletas não configuram pênalti. A queda deve ser consequência de uma infração, não do próprio impulso.',
+    dialogue: '[VAR]: "Master e reversa sincronizadas. Observe se há alavanca antes da queda."',
+    zone: { xPercent: 92, yPercent: 48, name: 'Grande Área' },
+    scene: {
+      players: [
+        pl('a9', 'ATT', 9, 'ATACANTE', [84, 30], [95, 34], { reacts: 'FALL' }),
+        pl('d4', 'DEF', 4, 'ZAGUEIRO', [90, 38], [95, 35]),
+        pl('a10', 'ATT', 10, 'MEIA', [80, 40], [88, 38]),
+        pl('d5', 'DEF', 5, 'ZAGUEIRO', [88, 26], [92, 28]),
+        GK
+      ],
+      ballFrom: [86, 31],
+      ballTo: [97, 33],
+      contactFrame: 52,
+      focusPlayerId: 'a9',
+      contactLabel: 'Contato leve do #4 no #9'
+    }
+  },
+  {
+    category: 'DOGSO_CHANCE_CLARA',
+    title: (att, def) => `Chance clara de gol impedida: ${att.shortName} x ${def.shortName}`,
+    description: (att, def) =>
+      `Atacante do ${att.name} lançado em direção ao gol é puxado pela camisa pelo zagueiro camisa 4 do ${def.name}, sem disputa pela bola.`,
+    context: 'Checagem de DOGSO (anulação de chance manifesta de gol).',
+    recommended: 'PENALTY_RED',
+    acceptable: ['PENALTY_RED'],
+    fieldDecision: 'PENALTY',
+    goalPending: false,
+    offenderSide: 'DEF',
+    offender: 4,
+    victim: 9,
+    ifab: 'Regra 12: segurar o adversário sem disputar a bola, anulando chance manifesta de gol, é pênalti com cartão vermelho.',
+    dialogue: '[VAR]: "Atacante sozinho com o goleiro. Veja a direção do puxão e se há tentativa de jogar a bola."',
+    zone: { xPercent: 90, yPercent: 38, name: 'Entrada da Grande Área' },
+    scene: {
+      players: [
+        pl('a9', 'ATT', 9, 'ATACANTE', [78, 32], [96, 34], { reacts: 'FALL' }),
+        pl('d4', 'DEF', 4, 'ZAGUEIRO', [80, 38], [95, 35]),
+        pl('d5', 'DEF', 5, 'ZAGUEIRO', [76, 22], [88, 26]),
+        GK
+      ],
+      ballFrom: [82, 32],
+      ballTo: [100, 34],
+      contactFrame: 55,
+      focusPlayerId: 'd4',
+      contactLabel: 'Puxão na camisa do #9'
+    }
+  },
+  {
+    category: 'FORCA_EXCESSIVA',
+    title: (att, def) => `Entrada violenta no meio-campo: ${def.shortName} sobre ${att.shortName}`,
+    description: (att, def) =>
+      `O volante camisa 5 do ${def.name} entra de carrinho com a sola exposta na perna do meia camisa 10 do ${att.name}. Em campo foi mostrado amarelo.`,
+    context: 'Checagem de conduta violenta ou força excessiva.',
+    recommended: 'RED_CARD',
+    acceptable: ['RED_CARD'],
+    fieldDecision: 'YELLOW_CARD',
+    goalPending: false,
+    offenderSide: 'DEF',
+    offender: 5,
+    victim: 10,
+    ifab: 'Regra 12: entrada com travas expostas, velocidade e altura que colocam em risco a integridade do adversário é força excessiva (vermelho direto).',
+    dialogue: '[VAR]: "Câmera reversa pronta. Avalie altura das travas e ponto de contato."',
+    zone: { xPercent: 50, yPercent: 50, name: 'Círculo Central' },
+    scene: {
+      players: [
+        pl('a10', 'ATT', 10, 'MEIA', [48, 34], [56, 34], { reacts: 'FALL' }),
+        pl('d5', 'DEF', 5, 'VOLANTE', [60, 36], [55, 34], { reacts: 'SLIDE' }),
+        pl('a8', 'ATT', 8, 'VOLANTE', [44, 42], [50, 40]),
+        pl('d6', 'DEF', 6, 'ZAGUEIRO', [64, 28], [62, 30])
+      ],
+      ballFrom: [52, 34],
+      ballTo: [60, 33],
+      contactFrame: 48,
+      focusPlayerId: 'd5',
+      contactLabel: 'Travas na canela do #10'
+    }
+  },
+  {
+    category: 'MAO_VOLUMETRIA',
+    title: (att, def) => `Possível mão na área do ${def.shortName} (${att.shortName} atacando)`,
+    description: (att, def) =>
+      `Finalização do ${att.name} atinge o braço do zagueiro camisa 4 do ${def.name} dentro da área. Em campo: seguir.`,
+    context: 'Checagem de pênalti por toque de mão.',
+    recommended: 'PENALTY',
+    acceptable: ['PENALTY'],
+    fieldDecision: 'PLAY_ON',
+    goalPending: false,
+    offenderSide: 'DEF',
+    offender: 4,
+    victim: 9,
+    ifab: 'Regra 12: é infração se o braço amplia o corpo de forma antinatural, em posição fora da silhueta, bloqueando a bola.',
+    dialogue: '[VAR]: "Visão de trás do gol e biomecânica sincronizadas. Veja o ângulo do braço."',
+    zone: { xPercent: 90, yPercent: 52, name: 'Grande Área' },
+    scene: {
+      players: [
+        pl('a9', 'ATT', 9, 'ATACANTE', [80, 34], [86, 35]),
+        pl('d4', 'DEF', 4, 'ZAGUEIRO', [94, 36], [94, 36], { reacts: 'ARM' }),
+        pl('d5', 'DEF', 5, 'ZAGUEIRO', [91, 28], [92, 29]),
+        GK
+      ],
+      ballFrom: [88, 35],
+      ballTo: [100, 33],
+      contactFrame: 55,
+      focusPlayerId: 'd4',
+      contactLabel: 'Bola atinge o braço do #4'
+    }
+  }
+];
+
+const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+export function getRandomIncidentsForMatch(home: Team, away: Team): Incident[] {
+  const selected = [...TEMPLATES].sort(() => Math.random() - 0.5).slice(0, 3);
+  const minutes = [rand(14, 38), rand(48, 68), rand(74, 88)];
+
+  return selected.map((tpl, idx) => {
+    const attIsHome = Math.random() < 0.5;
+    const att = attIsHome ? home : away;
+    const def = attIsHome ? away : home;
+    const attackingTeam: 'HOME' | 'AWAY' = attIsHome ? 'HOME' : 'AWAY';
+    const defendingTeam: 'HOME' | 'AWAY' = attIsHome ? 'AWAY' : 'HOME';
+    const offendingTeam = tpl.offenderSide === 'ATT' ? attackingTeam : defendingTeam;
+
+    return {
+      id: `incident-${Date.now()}-${idx}`,
+      minute: minutes[idx],
+      category: tpl.category,
+      title: tpl.title(att, def),
+      description: tpl.description(att, def),
+      context: tpl.context,
+      pitchZone: { ...tpl.zone, xPercent: attIsHome ? tpl.zone.xPercent : 100 - tpl.zone.xPercent },
+      offendingTeam,
+      attackingTeam,
+      offendingPlayerNumber: tpl.offender,
+      victimPlayerNumber: tpl.victim,
+      recommendedVarDecision: tpl.recommended,
+      acceptableDecisions: tpl.acceptable,
+      fieldDecision: tpl.fieldDecision,
+      goalPending: tpl.goalPending,
+      ifabExplanation: tpl.ifab,
+      defaultVarDialogue: tpl.dialogue,
+      scene: tpl.scene,
+      offside: tpl.offside
+    };
+  });
+}

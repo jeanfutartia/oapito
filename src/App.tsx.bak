@@ -1,0 +1,247 @@
+﻿import { useEffect, useState } from 'react';
+import { useGameStore } from './store/useGameStore';
+import { PitchCanvas } from './components/PitchCanvas';
+import { VARModal } from './components/VARModal';
+import { VARRadioModal } from './components/VARRadioModal';
+import { ProfileModal } from './components/ProfileModal';
+import { MatchReportModal } from './components/MatchReportModal';
+import { MatchHistoryModal } from './components/MatchHistoryModal';
+import { ManagerIncidentModal } from './components/ManagerIncidentModal';
+import { MatchStatsSidebar } from './components/MatchStatsSidebar';
+import { GoalCelebrationOverlay } from './components/GoalCelebrationOverlay';
+import { SmartRefereeDashboard } from './components/SmartRefereeDashboard';
+
+export function App() {
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showTwistMenu, setShowTwistMenu] = useState(false);
+
+  const {
+    isProfileCreated,
+    week,
+    seasonMatchCount,
+    actionPoints,
+    referee,
+    teams,
+    geminiValidation,
+    matchHistory,
+    nextMatchSchedule,
+    currentManagerIncident,
+    currentGoalAnimation,
+    gameTwistUsed,
+    isEvaluatingPostMatch,
+    homeManagerEjected,
+    awayManagerEjected,
+    liveStats,
+    activeMatch,
+    createProfile,
+    startScheduledMatch,
+    triggerGameTwistAction,
+    clearGoalAnimation,
+    updateMatchMinute,
+    setMatchSpeed,
+    triggerInstantFieldDecision,
+    openVarRadioIntercom,
+    openVarMonitorOFR,
+    confirmFinalDecision,
+    resolveManagerIncident,
+    finishMatch,
+    spendActionPoint,
+    registerSprayUse
+  } = useGameStore();
+
+  useEffect(() => {
+    if (!activeMatch || activeMatch.status !== 'FIRST_HALF' || currentManagerIncident) return;
+    const intervalMs = Math.max(180, 1000 / activeMatch.matchSpeed);
+    const timer = setInterval(() => { updateMatchMinute(); }, intervalMs);
+    return () => clearInterval(timer);
+  }, [activeMatch?.status, activeMatch?.matchSpeed, activeMatch?.minute, currentManagerIncident, updateMatchMinute]);
+
+  const currentTierTeams = teams.filter(t => t.tier === referee.tier);
+  const isGoalOrOffside = activeMatch?.currentIncident?.category === 'IMPEDIMENTO_3D' || activeMatch?.currentIncident?.category === 'GOL_POLÊMICO';
+  const isPenaltyContext = activeMatch?.currentIncident?.category === 'DOGSO_CHANCE_CLARA' || activeMatch?.currentIncident?.category === 'PENALTI_DISPUTA' || activeMatch?.currentIncident?.category === 'MAO_VOLUMETRIA';
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      {!isProfileCreated && <ProfileModal onSave={createProfile} />}
+      {showHistoryModal && <MatchHistoryModal history={matchHistory} onClose={() => setShowHistoryModal(false)} />}
+      
+      {currentGoalAnimation && (
+        <GoalCelebrationOverlay data={currentGoalAnimation} onClose={clearGoalAnimation} />
+      )}
+
+      {currentManagerIncident && (
+        <ManagerIncidentModal incident={currentManagerIncident} onResolve={resolveManagerIncident} />
+      )}
+
+      <header className="bg-slate-900 border-b border-slate-800 px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="bg-emerald-600 p-2 rounded-lg text-white font-black text-base">⚽</div>
+          <div>
+            <h1 className="text-base font-extrabold tracking-tight">O APITO: SIMULADOR DE ARBITRAGEM</h1>
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <span>{referee.federation}</span>
+              <span>•</span>
+              <span className="text-emerald-400 font-bold">{referee.tier}</span>
+              <span>•</span>
+              <span>Temporada (Jogo {seasonMatchCount + 1}/6)</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-6 text-xs">
+          <div><span className="text-slate-400 block">Árbitro</span><span className="font-bold text-slate-200">{referee.name}</span></div>
+          <div><span className="text-slate-400 block">Nota UEFA</span><span className="font-bold text-emerald-400">{referee.uefaAverageScore.toFixed(2)}</span></div>
+          <div><span className="text-slate-400 block">Saldo</span><span className="font-bold text-amber-400">R$ {referee.bankBalance.toLocaleString()}</span></div>
+        </div>
+      </header>
+
+      <main className="flex-1 max-w-7xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 flex flex-col gap-6">
+          {activeMatch ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col gap-4 shadow-xl">
+              <div className="flex items-center justify-between bg-slate-950 p-4 rounded-lg border border-slate-800 font-mono">
+                <span className="font-black text-sm text-red-400">{activeMatch.homeTeam.name}</span>
+                <div className="text-center">
+                  <span className="text-3xl font-black">{activeMatch.homeScore} - {activeMatch.awayScore}</span>
+                  <div className="text-xs text-emerald-400 font-bold">{activeMatch.minute}' MIN</div>
+                </div>
+                <span className="font-black text-sm text-cyan-400">{activeMatch.awayTeam.name}</span>
+              </div>
+
+              <PitchCanvas 
+                isPlaying={activeMatch.status === 'FIRST_HALF'} 
+                isPausedForKmi={activeMatch.status !== 'FIRST_HALF'}
+                temperature={activeMatch.matchTemperature}
+                homeRedCards={activeMatch.homeRedCards}
+                awayRedCards={activeMatch.awayRedCards}
+              />
+
+              <div className="flex flex-wrap items-center justify-between text-xs gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400">Velocidade:</span>
+                  {[1, 2, 5].map((speed) => (
+                    <button key={speed} onClick={() => setMatchSpeed(speed)} className={`px-2.5 py-1 rounded font-bold ${activeMatch.matchSpeed === speed ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                      {speed}x
+                    </button>
+                  ))}
+                </div>
+
+                {/* RUMO INESPERADO COM MAIS OPÇÕES */}
+                <div className="relative">
+                  <button
+                    disabled={gameTwistUsed || activeMatch.status !== 'FIRST_HALF'}
+                    onClick={() => setShowTwistMenu(!showTwistMenu)}
+                    className={`px-3 py-1.5 rounded-lg font-bold border transition flex items-center gap-1.5 ${
+                      gameTwistUsed ? 'bg-slate-800/40 text-slate-600 cursor-not-allowed' : 'bg-purple-950 hover:bg-purple-900 border-purple-500 text-purple-200'
+                    }`}
+                  >
+                    <span>⚡ Rumo Inesperado (Gemini)</span>
+                  </button>
+
+                  {showTwistMenu && !gameTwistUsed && (
+                    <div className="absolute right-0 bottom-9 bg-slate-900 border border-slate-700 p-3 rounded-xl shadow-2xl w-80 z-30 flex flex-col gap-2 text-xs">
+                      <span className="font-bold text-amber-400 uppercase text-[10px]">Escolha a Reviravolta da Partida:</span>
+                      <button onClick={() => { triggerGameTwistAction("Clima de guerra! Princípio de tumulto generalizado após entrada dura no meio-campo."); setShowTwistMenu(false); }} className="p-2 text-left bg-slate-950 hover:bg-slate-800 rounded">🔥 Tumulto e Empurra-Empurra</button>
+                      <button onClick={() => { triggerGameTwistAction("Chuva torrencial alaga o gramado, tornando todas as jogadas escorregadias."); setShowTwistMenu(false); }} className="p-2 text-left bg-slate-950 hover:bg-slate-800 rounded">🌧️ Dilúvio e Gramado Encharcado</button>
+                      <button onClick={() => { triggerGameTwistAction("Invasão de campo por torcedor com bandeira em protesto."); setShowTwistMenu(false); }} className="p-2 text-left bg-slate-950 hover:bg-slate-800 rounded">🏃 Invasão de Torcedor em Campo</button>
+                      <button onClick={() => { triggerGameTwistAction("Apagão parcial nos refletores do estádio paralisa a partida por dez minutos."); setShowTwistMenu(false); }} className="p-2 text-left bg-slate-950 hover:bg-slate-800 rounded">💡 Apagão Parcial nos Refletores</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {activeMatch.status === 'KMI_PAUSED' && activeMatch.currentIncident && (
+                <div className="bg-slate-950 border border-amber-500/80 p-5 rounded-lg flex flex-col gap-4 shadow-2xl">
+                  <span className="text-xs font-black text-amber-400 uppercase">⚠️ LANCE CAPITAL ({activeMatch.currentIncident.minute}')</span>
+                  <p className="text-xs text-slate-200">{activeMatch.currentIncident.description}</p>
+                  
+                  <div className="flex gap-2">
+                    <button onClick={openVarRadioIntercom} className="px-3.5 py-2 bg-indigo-600 rounded text-xs font-bold">📻 Rádio VAR</button>
+                    <button onClick={openVarMonitorOFR} className="px-3.5 py-2 bg-red-600 rounded text-xs font-bold">🖥️ Monitor OFR</button>
+                  </div>
+
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase block mb-1.5">Decisão Imediata de Campo:</span>
+                    {isGoalOrOffside ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <button onClick={() => triggerInstantFieldDecision('GOAL_VALID')} className="p-2 bg-emerald-600 rounded text-xs font-bold">Confirmar Gol</button>
+                        <button onClick={() => triggerInstantFieldDecision('GOAL_DISALLOWED')} className="p-2 bg-red-600 rounded text-xs font-bold">Anular (Impedimento)</button>
+                        <button onClick={() => triggerInstantFieldDecision('FOUL')} className="p-2 bg-amber-800 rounded text-xs font-bold">Anular (Falta APP)</button>
+                      </div>
+                    ) : isPenaltyContext ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                        <button onClick={() => triggerInstantFieldDecision('PENALTY_YELLOW')} className="p-2 bg-amber-600 text-black font-bold rounded">Pênalti + Amarelo</button>
+                        <button onClick={() => triggerInstantFieldDecision('PENALTY_RED')} className="p-2 bg-red-600 font-bold rounded">Pênalti + Vermelho</button>
+                        <button onClick={() => triggerInstantFieldDecision('PENALTY')} className="p-2 bg-emerald-600 font-bold rounded">Pênalti Simples</button>
+                        <button onClick={() => triggerInstantFieldDecision('PLAY_ON')} className="p-2 bg-slate-800 font-bold rounded">Mandar Seguir</button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-4 gap-2">
+                        <button onClick={() => triggerInstantFieldDecision('PLAY_ON')} className="p-2 bg-slate-800 rounded text-xs">Seguir</button>
+                        <button onClick={() => triggerInstantFieldDecision('FOUL')} className="p-2 bg-amber-900 rounded text-xs">Falta</button>
+                        <button onClick={() => triggerInstantFieldDecision('YELLOW_CARD')} className="p-2 bg-yellow-600 text-black rounded text-xs">Amarelo</button>
+                        <button onClick={() => triggerInstantFieldDecision('RED_CARD')} className="p-2 bg-red-600 rounded text-xs">Vermelho</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 max-h-40 overflow-y-auto text-xs font-mono">
+                {activeMatch.ticker.map((entry: string, idx: number) => (<div key={idx} className="text-slate-300">{entry}</div>))}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-6">
+              {nextMatchSchedule && (
+                <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex justify-between items-center">
+                  <div>
+                    <span className="text-xs text-emerald-400 font-bold">Temporada: Partida {seasonMatchCount + 1} de 6</span>
+                    <h3 className="text-xl font-black text-white mt-1">{nextMatchSchedule.home.name} x {nextMatchSchedule.away.name}</h3>
+                    <p className="text-xs text-slate-400">{nextMatchSchedule.stadium}</p>
+                  </div>
+                  <button onClick={startScheduledMatch} className="px-6 py-3 bg-emerald-600 font-bold text-xs uppercase rounded-xl">
+                    ▶️ Entrar em Campo
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-6">
+          {activeMatch ? (
+            <>
+              <SmartRefereeDashboard bpm={liveStats.refereeBpm} distanceKm={liveStats.distanceCoveredKm} temperature={activeMatch.matchTemperature} onSprayUsed={registerSprayUse} />
+              <MatchStatsSidebar homeTeam={activeMatch.homeTeam} awayTeam={activeMatch.awayTeam} stats={liveStats} homeManagerEjected={homeManagerEjected} awayManagerEjected={awayManagerEjected} />
+            </>
+          ) : (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+              <h2 className="text-sm font-bold text-slate-100 uppercase mb-3">Tabela: {referee.tier}</h2>
+              <div className="space-y-2">
+                {currentTierTeams.map((t, i) => (
+                  <div key={t.id} className="flex justify-between text-xs py-1 border-b border-slate-800">
+                    <span>{i+1}. {t.name}</span>
+                    <span className="font-bold">{t.points} pts</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {activeMatch?.status === 'FINISHED' && (
+        <MatchReportModal homeTeam={activeMatch.homeTeam} awayTeam={activeMatch.awayTeam} homeScore={activeMatch.homeScore} awayScore={activeMatch.awayScore} report={activeMatch.report} uefaScore={activeMatch.matchRating} isEvaluating={isEvaluatingPostMatch} onSignAndContinue={finishMatch} />
+      )}
+      {activeMatch?.status === 'VAR_RADIO' && activeMatch.currentIncident && (
+        <VARRadioModal incident={activeMatch.currentIncident} apiKey={referee.geminiApiKey} onGoToOFR={openVarMonitorOFR} onKeepFieldDecision={triggerInstantFieldDecision} />
+      )}
+      {activeMatch?.status === 'VAR_ACTIVE' && activeMatch.currentIncident && (
+        <VARModal incident={activeMatch.currentIncident} homeTeam={activeMatch.homeTeam} awayTeam={activeMatch.awayTeam} initialDecision={activeMatch.initialDecision} onConfirm={confirmFinalDecision} />
+      )}
+    </div>
+  );
+}
+
+export default App;

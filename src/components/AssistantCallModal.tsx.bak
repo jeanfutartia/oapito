@@ -1,0 +1,33 @@
+import type { AssistantCall } from '../types/types';
+
+interface Props { call: AssistantCall; helpsLeft: number; hint: boolean; onChoose: (c: 'TRUST' | 'VAR' | 'IGNORE') => void }
+
+export const AssistantCallModal = ({ call, helpsLeft, hint, onChoose }: Props) => (
+  <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50 font-sans">
+    <div className="bg-slate-900 border-2 border-amber-500 rounded-2xl max-w-xl w-full p-4 sm:p-6 shadow-2xl text-slate-100 flex flex-col gap-4">
+      <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+        <span className="bg-amber-500 text-black font-black text-xs px-2.5 py-1 rounded uppercase tracking-wider">🚩 Bandeira levantada • {call.minute}'</span>
+        <span className="text-xs text-slate-400">{call.teamName}</span>
+      </div>
+      <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col gap-2">
+        <p className="text-sm text-amber-100 leading-relaxed">{call.text}</p>
+        <span className={'text-[11px] font-bold ' + (call.firm ? 'text-emerald-400' : 'text-orange-400')}>
+          {call.firm ? '✔ Bandeira firme' : '❓ Bandeira duvidosa'}
+        </span>
+        {hint && <span className="text-[11px] text-slate-400">Dica: bandeira firme costuma estar certa. Se ele hesitou, vale pedir ajuda ao VAR.</span>}
+      </div>
+      <span className="text-xs font-black text-slate-300 uppercase tracking-wider">O que você faz?</span>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <button onClick={() => onChoose('TRUST')} className="p-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-bold flex flex-col items-center gap-1 transition">
+          <span className="text-base">🤝</span><span>Confiar no bandeirinha</span><span className="text-[10px] text-slate-400 font-normal">Rápido, mas arriscado</span>
+        </button>
+        <button disabled={helpsLeft <= 0} onClick={() => onChoose('VAR')} className="p-3 bg-indigo-700/80 hover:bg-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed border border-indigo-500 rounded-xl text-xs font-bold flex flex-col items-center gap-1 transition">
+          <span className="text-base">🖥️</span><span>Pedir ajuda ao VAR</span><span className="text-[10px] text-indigo-100/80 font-normal">{helpsLeft} ajuda(s) restante(s) • demora um pouco</span>
+        </button>
+        <button onClick={() => onChoose('IGNORE')} className="p-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold flex flex-col items-center gap-1 transition">
+          <span className="text-base">▶️</span><span>Mandar seguir</span><span className="text-[10px] text-slate-400 font-normal">Contra a bandeira</span>
+        </button>
+      </div>
+    </div>
+  </div>
+);

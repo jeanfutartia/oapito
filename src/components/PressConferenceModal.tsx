@@ -1,0 +1,41 @@
+import { useState } from 'react';
+import type { PressQuestion } from '../types/types';
+
+interface Props { question: PressQuestion; index: number; total: number; onAnswer: (optionIndex: number) => void }
+
+export const PressConferenceModal = ({ question, index, total, onAnswer }: Props) => {
+  const [picked, setPicked] = useState<number | null>(null);
+  const opt = picked !== null ? question.options[picked] : null;
+  return (
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50 font-sans">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-xl w-full p-4 sm:p-6 shadow-2xl text-slate-100 flex flex-col gap-4">
+        <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+          <span className="bg-indigo-500 text-white font-black text-xs px-2.5 py-1 rounded uppercase tracking-wider">🎤 Entrevista coletiva</span>
+          <span className="text-xs text-slate-400">Pergunta {index + 1} de {total}</span>
+        </div>
+        <div className="bg-slate-950 border border-slate-800 rounded-xl p-4">
+          <span className="text-[11px] text-indigo-300 font-bold">{question.journalist}</span>
+          <p className="text-sm text-white mt-1">"{question.question}"</p>
+        </div>
+        {opt ? (
+          <div className="flex flex-col gap-3">
+            <div className={'rounded-xl border p-3 text-xs ' + (opt.reputation > 0 ? 'border-emerald-700 bg-emerald-950/40' : opt.reputation < 0 ? 'border-red-800 bg-red-950/40' : 'border-slate-700 bg-slate-950')}>
+              <p className="italic text-slate-200">"{opt.label}"</p>
+              <p className="mt-2 text-slate-300">{opt.reply}</p>
+              <p className="mt-1 font-mono font-bold">Reputação {opt.reputation > 0 ? '+' : ''}{opt.reputation}</p>
+            </div>
+            <button onClick={() => { onAnswer(picked ?? 0); setPicked(null); }} className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 font-bold rounded-xl text-xs transition">
+              {index + 1 < total ? 'Próxima pergunta' : 'Encerrar coletiva'}
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {question.options.map((o, i) => (
+              <button key={i} onClick={() => setPicked(i)} className="p-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs text-left transition">{o.label}</button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

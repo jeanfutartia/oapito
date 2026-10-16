@@ -1,0 +1,257 @@
+﻿export type DecisionType =
+  | 'PLAY_ON'
+  | 'FOUL'
+  | 'YELLOW_CARD'
+  | 'RED_CARD'
+  | 'PENALTY'
+  | 'PENALTY_YELLOW'
+  | 'PENALTY_RED'
+  | 'GOAL_VALID'
+  | 'GOAL_DISALLOWED';
+
+export type RefereeStyle = 'RIGOROSO' | 'DIALOGADOR' | 'DISCIPLINADOR' | 'PREVENTIVO';
+
+export type DivisionTier = 'SERIE_D' | 'SERIE_C' | 'SERIE_B' | 'SERIE_A' | 'FIFA_INTERNACIONAL';
+
+export interface RefereeAttributes {
+  physicalCondition: number;
+  stressResistance: number;
+  authority: number;
+  ruleKnowledge: number;
+  integrity: number;
+}
+
+export interface RefereeProfile {
+  name: string;
+  age: number;
+  federation: string;
+  style: RefereeStyle;
+  tier: DivisionTier;
+  reputation: number;
+  uefaAverageScore: number;
+  geminiApiKey?: string;
+  attributes: RefereeAttributes;
+  stats: {
+    matches: number;
+    yellowCards: number;
+    redCards: number;
+    penalties: number;
+    varInterventions: number;
+  };
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  shortName: string;
+  tier: DivisionTier;
+  primaryColor: string;
+  secondaryColor: string;
+  points: number;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  aggressionLevel: number;
+  attackStrength: number;
+  defenseStrength: number;
+  stadiumName: string;
+  managerName: string;
+}
+
+export type IncidentCategory =
+  | 'PENALTI_DISPUTA'
+  | 'MAO_VOLUMETRIA'
+  | 'IMPEDIMENTO_3D'
+  | 'FORCA_EXCESSIVA'
+  | 'DOGSO_CHANCE_CLARA'
+  | 'GOL_POLÊMICO';
+
+export type CameraAngleId = 'MASTER' | 'TACTICAL' | 'BEHIND_GOAL' | 'REVERSE' | 'CLOSEUP';
+
+export interface IncidentPitchZone {
+  xPercent: number;
+  yPercent: number;
+  name: string;
+}
+
+/** Jogador de uma cena: coordenadas em metros (campo 105x68). O ataque sempre vai para x = 105. */
+export interface ScenePlayer {
+  id: string;
+  side: 'ATT' | 'DEF';
+  number: number;
+  role: string;
+  from: [number, number];
+  to: [number, number];
+  gk?: boolean;
+  reacts?: 'FALL' | 'SLIDE' | 'ARM';
+}
+
+export interface IncidentScene {
+  players: ScenePlayer[];
+  ballFrom: [number, number];
+  ballTo: [number, number];
+  contactFrame: number;
+  focusPlayerId: string;
+  contactLabel: string;
+}
+
+export interface BodyPartPoint {
+  name: string;
+  offsetCm: number;
+  legal: boolean;
+}
+
+export interface OffsideData {
+  kickFrame: number;
+  deltaCmAtKick: number;
+  closingCmPerFrame: number;
+  passerNumber: number;
+  attackerNumber: number;
+  defenderNumber: number;
+  attackerParts: BodyPartPoint[];
+  defenderParts: BodyPartPoint[];
+}
+
+export interface Incident {
+  id: string;
+  minute: number;
+  category: IncidentCategory;
+  title: string;
+  description: string;
+  context: string;
+  pitchZone: IncidentPitchZone;
+  offendingTeam: 'HOME' | 'AWAY';
+  attackingTeam: 'HOME' | 'AWAY';
+  offendingPlayerNumber: number;
+  victimPlayerNumber: number;
+  recommendedVarDecision: DecisionType;
+  acceptableDecisions: DecisionType[];
+  fieldDecision: DecisionType;
+  goalPending: boolean;
+  ifabExplanation: string;
+  defaultVarDialogue: string;
+  scene?: IncidentScene;
+  offside?: OffsideData;
+}
+
+export interface PreMatchStoryline {
+  pressHeadline: string;
+  homeManagerQuote: string;
+  awayManagerQuote: string;
+  scrutinyContext: string;
+}
+
+export interface ManagerIncident {
+  minute: number;
+  team: 'HOME' | 'AWAY';
+  managerName: string;
+  teamName: string;
+  reason: string;
+  quote: string;
+  intensity: 'MODERADA' | 'ACINTOSA' | 'HOSTIL';
+}
+
+export interface MatchLiveStats {
+  homePossession: number;
+  awayPossession: number;
+  homeShots: number;
+  awayShots: number;
+  homeShotsOnTarget: number;
+  awayShotsOnTarget: number;
+  homeFouls: number;
+  awayFouls: number;
+  homeCorners: number;
+  awayCorners: number;
+  homeOffsides: number;
+  awayOffsides: number;
+  refereeBpm: number;
+  distanceCoveredKm: number;
+}
+
+export interface GoalAnimationData {
+  variant: 'GOAL' | 'DISALLOWED';
+  reason?: string;
+  teamName: string;
+  teamColor: string;
+  minute: number;
+  playerNumber: number;
+  isPenalty: boolean;
+  homeName: string;
+  awayName: string;
+  homeShort: string;
+  awayShort: string;
+  homeColor: string;
+  awayColor: string;
+  homeScore: number;
+  awayScore: number;
+  scoringSide: 'HOME' | 'AWAY';
+}
+
+export interface MatchReportGoal {
+  minute: number;
+  team: 'HOME' | 'AWAY';
+  playerNumber: number;
+  isPenalty: boolean;
+}
+
+export interface MatchReportCard {
+  minute: number;
+  team: 'HOME' | 'AWAY';
+  targetType: 'PLAYER' | 'MANAGER';
+  targetLabel: string;
+  cardType: 'YELLOW' | 'RED';
+  reason: string;
+}
+
+export interface MatchReportVarEvent {
+  minute: number;
+  title: string;
+  decision: DecisionType;
+  overturned: boolean;
+}
+
+export interface DecisionVerdictReport {
+  minute: number;
+  incidentTitle: string;
+  refereeDecision: DecisionType;
+  recommendedDecision: DecisionType;
+  isCorrect: boolean;
+  geminiAnalysis: string;
+}
+
+export interface MediaMesaRedonda {
+  programName: string;
+  headline: string;
+  refereeExpertAnalysis: string;
+  journalistOpinion: string;
+  verdictSummary: string;
+}
+
+export interface MatchReport {
+  id: string;
+  week: number;
+  tier: DivisionTier;
+  stadium: string;
+  homeTeamName: string;
+  awayTeamName: string;
+  homeScore: number;
+  awayScore: number;
+  uefaScore: number;
+  dateStr: string;
+  attendance: number;
+  pressHeadline: string;
+  matchStats: MatchLiveStats;
+  mediaMesaRedonda?: MediaMesaRedonda;
+  decisionVerdicts: DecisionVerdictReport[];
+  goals: MatchReportGoal[];
+  cards: MatchReportCard[];
+  varReviews: MatchReportVarEvent[];
+}
+
+export interface RadioChatMessage {
+  sender: 'VAR' | 'REF';
+  text: string;
+}

@@ -1,0 +1,30 @@
+import type { CaptainTalk } from '../types/types';
+
+interface Props { talk: CaptainTalk; onResolve: (c: 'EXPLAIN' | 'WARN' | 'IGNORE') => void }
+
+export const CaptainTalkModal = ({ talk, onResolve }: Props) => (
+  <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50 font-sans">
+    <div className="bg-slate-900 border-2 border-cyan-500 rounded-2xl max-w-xl w-full p-4 sm:p-6 shadow-2xl text-slate-100 flex flex-col gap-4">
+      <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+        <span className="bg-cyan-500 text-black font-black text-xs px-2.5 py-1 rounded uppercase tracking-wider">Capitão se aproxima • {talk.minute}'</span>
+        <span className="text-xs text-slate-400">{talk.teamName}</span>
+      </div>
+      <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col gap-2">
+        <span className="text-xs text-slate-400">Capitão <strong className="text-white">{talk.captainName}</strong> • {talk.heat === 3 ? 'exaltado' : talk.heat === 2 ? 'irritado' : 'tranquilo'}</span>
+        <p className="text-cyan-200 font-mono text-sm italic">"{talk.complaint}"</p>
+      </div>
+      <span className="text-xs font-black text-slate-300 uppercase tracking-wider">Como você reage?</span>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <button onClick={() => onResolve('EXPLAIN')} className="p-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-bold flex flex-col items-center gap-1 transition">
+          <span className="text-base">🗣️</span><span>Explicar com calma</span><span className="text-[10px] text-slate-400 font-normal">Esfria o jogo</span>
+        </button>
+        <button onClick={() => onResolve('WARN')} className="p-3 bg-amber-700/80 hover:bg-amber-600 border border-amber-500 rounded-xl text-xs font-bold flex flex-col items-center gap-1 transition">
+          <span className="text-base">☝️</span><span>Advertência firme</span><span className="text-[10px] text-amber-100/80 font-normal">Impõe autoridade</span>
+        </button>
+        <button onClick={() => onResolve('IGNORE')} className="p-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold flex flex-col items-center gap-1 transition">
+          <span className="text-base">🙉</span><span>Ignorar</span><span className="text-[10px] text-slate-400 font-normal">Arriscado</span>
+        </button>
+      </div>
+    </div>
+  </div>
+);

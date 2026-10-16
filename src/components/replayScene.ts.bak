@@ -1,0 +1,277 @@
+import type { Incident, Team } from '../types/types';
+
+export type V = [number, number, number];
+export const T_SEC = 4;
+
+export interface Actor {
+  x: number; y: number; h: number; speed: number; phase: number;
+  kit: string; shorts: string; skin: string; num: number; tag: string;
+  pose: 'RUN' | 'STAND' | 'SLIDE' | 'FALL';
+  kick?: number;
+  armOut?: -1 | 1;
+}
+export interface Joints {
+  head: V; sh: [V, V]; hip: [V, V]; knee: [V, V]; foot: [V, V]; elbow: [V, V]; hand: [V, V];
+}
+export interface Metric { label: string; value: string; tone?: 'ok' | 'bad' | 'warn' }
+export interface Scene {
+  kind: 'OFFSIDE' | 'PENALTY' | 'TACKLE' | 'HAND';
+  title: string;
+  center: V; goalX: number; zoom: number; tk: number;
+  actors: (t: number) => Actor[];
+  ball: (t: number) => V;
+  focus: (t: number) => V;
+  contact?: V;
+  metrics: Metric[];
+  targetMarginCm?: number;
+}
+
+const sat = (n: number, a = 0, b = 1) => Math.max(a, Math.min(b, n));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const seg = (t: number, a: number, b: number) => sat((t - a) / (b - a));
+const ease = (t: number) => t * t * (3 - 2 * t);
+const SK = ['#f1c9a5', '#d9a273', '#a9724a', '#7a4b2e', '#f6d7bf'];
+
+export const isLight = (hex: string) => {
+  const h = hex.replace('#', '');
+  const f = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const n = parseInt(f, 16);
+  return (((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114) > 150;
+};
+
+// Esqueleto simplificado em metros (x = direção do ataque, z = altura)
+export function joints(a: Actor): Joints {
+  const mv = Math.min(1, a.speed / 5.5);
+  const sw = Math.sin(a.phase) * mv;
+  const slide = a.pose === 'SLIDE';
+  const fall = a.pose === 'FALL';
+  const lean = slide ? -1.1 : fall ? -1.35 : 0.14 * mv;
+  const hz = slide ? 0.36 : fall ? 0.42 : 0.95;
+  const c = Math.cos(a.h);
+  const s = Math.sin(a.h);
+  const L = (f: number, l: number, z: number): V => [a.x + f * c - l * s, a.y + f * s + l * c, Math.max(0.02, z)];
+  const shF = Math.sin(lean) * 0.52;
+  const shZ = hz + Math.cos(lean) * 0.52;
+  const leg = (sd: -1 | 1) => {
+    let ta = 0.75 * sw * sd;
+    let bend = 0.95 * Math.max(0, -sd * sw);
+    if (slide) { ta = sd > 0 ? 1.38 : 1.0; bend = sd > 0 ? 0.04 : 1.1; }
+    else if (fall) { ta = sd > 0 ? 0.8 : -0.25; bend = 0.3; }
+    else if (a.kick !== undefined && sd > 0) { ta = lerp(-0.55, 1.2, a.kick); bend = 0; }
+    const sa = ta - bend;
+    const kf = Math.sin(ta) * 0.46;
+    const kz = hz - Math.cos(ta) * 0.46;
+    return { kn: L(kf, sd * 0.1, kz), ft: L(kf + Math.sin(sa) * 0.44, sd * 0.1, kz - Math.cos(sa) * 0.44) };
+  };
+  const arm = (sd: -1 | 1) => {
+    if (a.armOut === sd) return { el: L(shF + 0.08, sd * 0.45, shZ - 0.05), hd: L(shF + 0.14, sd * 0.8, shZ + 0.02) };
+    const aa = -0.7 * sw * sd + (slide ? 1.2 : fall ? 1.4 : 0);
+    const ef = shF + Math.sin(aa) * 0.28;
+    const ez = shZ - Math.cos(aa) * 0.28;
+    return { el: L(ef, sd * 0.24, ez), hd: L(ef + Math.sin(aa + 0.5) * 0.26, sd * 0.24, ez - Math.cos(aa + 0.5) * 0.26) };
+  };
+  const l0 = leg(-1); const l1 = leg(1); const a0 = arm(-1); const a1 = arm(1);
+  return {
+    head: L(shF + Math.sin(lean) * 0.18, 0, shZ + 0.2),
+    sh: [L(shF, -0.2, shZ), L(shF, 0.2, shZ)],
+    hip: [L(0, -0.12, hz), L(0, 0.12, hz)],
+    knee: [l0.kn, l1.kn], foot: [l0.ft, l1.ft], elbow: [a0.el, a1.el], hand: [a0.hd, a1.hd]
+  };
+}
+
+// Ponto do corpo (sem braços) mais próximo do gol adversário (+X) — regra do impedimento
+export function extreme(a: Actor): { x: number; part: string; p: V } {
+  const j = joints(a);
+  const c: [string, V][] = [
+    ['CABEÇA', j.head], ['OMBRO', j.sh[0]], ['OMBRO', j.sh[1]], ['QUADRIL', j.hip[0]], ['QUADRIL', j.hip[1]],
+    ['JOELHO', j.knee[0]], ['JOELHO', j.knee[1]], ['PÉ', j.foot[0]], ['PÉ', j.foot[1]]
+  ];
+  let b = c[0];
+  for (const q of c) if (q[1][0] > b[1][0]) b = q;
+  return { x: b[1][0], part: b[0], p: b[1] };
+}
+
+export function buildScene(inc: Incident, atkTeam: Team, defTeam: Team): Scene {
+  const seed = [...inc.id].reduce((s, ch) => (s * 31 + ch.charCodeAt(0)) >>> 0, 7);
+  const r = (n: number) => Math.abs(Math.sin(seed * 12.9898 + n * 78.233) * 43758.5453) % 1;
+  const A = atkTeam.primaryColor;
+  const D = defTeam.primaryColor;
+  const mk = (t: number, x: number, y: number, h: number, speed: number, side: 'A' | 'D', num: number, tag: string, extra: Partial<Actor> = {}): Actor => {
+    const kit = side === 'A' ? A : D;
+    return {
+      x, y, h, speed, phase: t * T_SEC * 9.4 + num * 1.3, kit, shorts: isLight(kit) ? '#111827' : '#f8fafc',
+      skin: SK[num % SK.length], num, tag, pose: 'RUN', ...extra
+    };
+  };
+  const rec = inc.recommendedVarDecision;
+  const cat = inc.category;
+
+  // ---------- IMPEDIMENTO ----------
+  if (cat === 'IMPEDIMENTO_3D' || cat === 'GOL_POLÊMICO') {
+    const valid = rec === 'GOAL_VALID';
+    const margin = valid ? -(0.02 + r(1) * 0.07) : 0.035 + r(1) * 0.095;
+    const tk = 0.42;
+    const vR = 5.8;
+    const gen = (t: number, rx: number, dx: number): Actor[] => {
+      const s = (t - tk) * T_SEC;
+      const kk = Math.abs(t - tk) < 0.09 ? 1 - Math.abs(t - tk) / 0.09 : undefined;
+      return [
+        mk(t, rx + vR * s, 3.2, 0.05, vR, 'A', 9, 'ATACANTE'),
+        mk(t, dx + 1.6 * s, 0, 2.6, 2.2, 'D', 3, 'ÚLT. DEFENSOR'),
+        mk(t, -21 + t * 5, -9, 0.35, 3.2, 'A', 8, 'PASSADOR', { kick: kk }),
+        mk(t, -3.5 + 1.2 * s, -10, 2.8, 2, 'D', 4, 'DEFESA'),
+        mk(t, -4.5 + 1.2 * s, 11, 3.0, 2, 'D', 2, 'DEFESA'),
+        mk(t, -7 + 4.5 * s, -15, 0.1, 4.5, 'A', 11, 'ATAQUE'),
+        mk(t, 19.5, 0.5, Math.PI, 0.2, 'D', 1, 'GOLEIRO', { pose: 'STAND' })
+      ];
+    };
+    const base = gen(tk, 0, 0);
+    const rx = margin - (extreme(base[0]).x - extreme(base[1]).x);
+    const rr = (tt: number) => rx + vR * (tt - tk) * T_SEC;
+    return {
+      kind: 'OFFSIDE', title: 'Impedimento • Tecnologia semiautomática', center: [-3, 1, 0], goalX: 24, zoom: 1.15, tk,
+      actors: t => gen(t, rx, 0),
+      ball: t => {
+        if (t < tk) return [-21 + t * 5 + 0.9, -8.8, 0.11];
+        const K: V = [-21 + tk * 5 + 0.9, -8.8, 0.11];
+        const Q: V = [rr(tk + 0.3) + 1.1, 3.2, 0.11];
+        if (t < tk + 0.3) {
+          const u = ease(seg(t, tk, tk + 0.3));
+          return [lerp(K[0], Q[0], u), lerp(K[1], Q[1], u), 0.11 + 0.55 * Math.sin(Math.PI * u)];
+        }
+        if (t < 0.8) return [rr(t) + 1.1, 3.2, 0.11];
+        const u = ease(seg(t, 0.8, 0.93));
+        return [lerp(rr(0.8) + 1.1, 24.4, u), lerp(3.2, 0.8, u), lerp(0.11, 1.0, u)];
+      },
+      focus: t => { const a = gen(t, rx, 0); return [extreme(a[1]).x, 2, 1]; },
+      metrics: [
+        { label: 'Rastreamento', value: '29 pontos • 50 Hz' },
+        { label: 'Câmeras de linha', value: '12 ativas' },
+        { label: 'Bola sensor (IMU)', value: '500 Hz' }
+      ],
+      targetMarginCm: margin * 100
+    };
+  }
+
+  // ---------- ENTRADA DE CARRINHO ----------
+  if (cat === 'FORCA_EXCESSIVA') {
+    const red = rec === 'RED_CARD';
+    const tc = 0.5;
+    const ax = (t: number) => (t < tc ? -14 + 28 * t : 2.2 * ease(seg(t, tc, tc + 0.3)));
+    const dpos = (t: number): [number, number] => {
+      if (t < tc) { const u = seg(t, 0, tc); return [lerp(-16, -0.5, u), lerp(-7, -0.6, u)]; }
+      const u = ease(seg(t, tc, tc + 0.28));
+      return [-0.5 + 2.8 * u, -0.6 + 0.9 * u];
+    };
+    return {
+      kind: 'TACKLE', title: 'Entrada de carrinho • Força excessiva', center: [0, 0, 0], goalX: 52.5, zoom: 1, tk: tc,
+      actors: t => {
+        const [dx, dy] = dpos(t);
+        const sliding = t >= tc - 0.06;
+        return [
+          mk(t, ax(t), 0, 0, t < tc ? 7 : 0.5, 'A', 10, 'MEIA', { pose: t >= tc + 0.03 ? 'FALL' : 'RUN' }),
+          mk(t, dx, dy, 0.39, sliding ? 0.5 : 8, 'D', 5, 'VOLANTE', { pose: sliding ? 'SLIDE' : 'RUN' }),
+          mk(t, 6 + 8 * t, -9, 0, 6, 'A', 7, 'ATAQUE'),
+          mk(t, 5 + 3 * t, 9, Math.PI, 3, 'D', 8, 'DEFESA'),
+          mk(t, -12 + 6 * t, 11, 0, 5, 'A', 4, 'APOIO')
+        ];
+      },
+      ball: t => {
+        if (t < tc) return [ax(t) + 0.9, 0, 0.11];
+        const u = ease(seg(t, tc, tc + 0.5));
+        return [ax(tc) + 0.9 + 9 * u, 1.5 * u, 0.11];
+      },
+      focus: () => [ax(tc) + 0.2, 0, 0.5],
+      contact: [ax(tc) + 0.2, 0, 0.3],
+      metrics: [
+        { label: 'Altura das travas', value: red ? '31 cm' : '14 cm', tone: red ? 'bad' : 'warn' },
+        { label: 'Velocidade da entrada', value: red ? '31,4 km/h' : '24,0 km/h', tone: red ? 'bad' : 'warn' },
+        { label: 'Travas expostas', value: red ? 'SIM' : 'Parcial', tone: red ? 'bad' : 'warn' },
+        { label: 'Ponto de contato', value: red ? 'Canela (acima do tornozelo)' : 'Tornozelo' },
+        { label: 'Bola disputada', value: 'Não — chegou após o contato', tone: 'warn' }
+      ]
+    };
+  }
+
+  // ---------- TOQUE DE MÃO ----------
+  if (cat === 'MAO_VOLUMETRIA') {
+    const pen = rec === 'PENALTY';
+    const tk = 0.3;
+    const tHit = 0.52;
+    const dx = 17.2;
+    const dy = 0.4;
+    const hit: V = pen ? [dx + 0.14, dy + 0.8, 1.35] : [dx + 0.1, dy + 0.3, 1.2];
+    const K: V = [4.4, -6.6, 0.11];
+    return {
+      kind: 'HAND', title: 'Toque de mão • Volumetria do braço', center: [15, 0, 0], goalX: 24, zoom: 1, tk: tHit,
+      actors: t => {
+        const kk = Math.abs(t - tk) < 0.09 ? 1 - Math.abs(t - tk) / 0.09 : undefined;
+        return [
+          mk(t, 3.5 + 1.2 * t, -7, 0.5, 2.2, 'A', 10, 'ATACANTE', { kick: kk }),
+          mk(t, dx, dy, Math.PI, 0.4, 'D', 4, 'DEFENSOR', { pose: 'STAND', armOut: pen ? 1 : undefined }),
+          mk(t, 21.5, 0, Math.PI, 0.2, 'D', 1, 'GOLEIRO', { pose: 'STAND' }),
+          mk(t, 11, 6, 0.4, 3.5, 'A', 9, 'ATAQUE')
+        ];
+      },
+      ball: t => {
+        if (t < tk) return [4.4 + 1.2 * t, -6.6, 0.11];
+        if (t < tHit) { const u = ease(seg(t, tk, tHit)); return [lerp(K[0], hit[0], u), lerp(K[1], hit[1], u), lerp(0.11, hit[2], u)]; }
+        const u = ease(seg(t, tHit, 0.75));
+        return [lerp(hit[0], 19.6, u), lerp(hit[1], 4.2, u), 0.2 + 0.7 * Math.sin(Math.PI * u)];
+      },
+      focus: () => hit,
+      contact: hit,
+      metrics: [
+        { label: 'Ângulo do braço', value: pen ? '72°' : '34°', tone: pen ? 'bad' : 'ok' },
+        { label: 'Ampliação do corpo', value: pen ? '+34%' : '+8%', tone: pen ? 'bad' : 'ok' },
+        { label: 'Distância do chute', value: '11,4 m' },
+        { label: 'Braço projetado ao chute', value: pen ? 'SIM' : 'Não (posição natural)', tone: pen ? 'bad' : 'ok' },
+        { label: 'Tempo de reação', value: '0,31 s' }
+      ]
+    };
+  }
+
+  // ---------- DISPUTA NA ÁREA ----------
+  const foul = rec === 'PENALTY';
+  const tc = 0.55;
+  const fallAt = foul ? tc + 0.02 : tc + 0.14;
+  const apos = (t: number): [number, number] => {
+    if (t < tc) { const u = seg(t, 0, tc); return [lerp(5, 18.2, u), lerp(-8, 0.8, u)]; }
+    const u = ease(seg(t, tc, tc + 0.35));
+    return [18.2 + 1.3 * u, 0.8 + 1.0 * u];
+  };
+  const dpos = (t: number): [number, number] => {
+    const u = seg(t, 0, tc);
+    return [lerp(10, 17.6, u), lerp(9, 1.6, u)];
+  };
+  return {
+    kind: 'PENALTY', title: 'Disputa na área • Checagem de contato', center: [17, 2, 0], goalX: 24, zoom: 1, tk: tc,
+    actors: t => {
+      const [ax, ay] = apos(t);
+      const [dx, dy] = dpos(t);
+      const kk = foul && Math.abs(t - tc) < 0.1 ? 1 - Math.abs(t - tc) / 0.1 : undefined;
+      return [
+        mk(t, ax, ay, 0.59, t < fallAt ? 6 : 0.5, 'A', 9, 'ATACANTE', { pose: t >= fallAt ? 'FALL' : 'RUN' }),
+        mk(t, dx, dy, -0.77, t < tc ? 6 : 1.5, 'D', 4, 'DEFENSOR', { kick: kk }),
+        mk(t, 23, 0, Math.PI, 0.2, 'D', 1, 'GOLEIRO', { pose: 'STAND' }),
+        mk(t, 12 + 2 * t, -9, 0.4, 4, 'A', 11, 'ATAQUE'),
+        mk(t, 14, 11, Math.PI, 2, 'D', 3, 'DEFESA')
+      ];
+    },
+    ball: t => {
+      const [ax, ay] = apos(t);
+      if (t < tc) return [ax + 0.9, ay + 0.3, 0.11];
+      const u = ease(seg(t, tc, tc + 0.5));
+      return foul ? [ax + 0.9 + 2 * u, ay + 0.3 + 1.2 * u, 0.11] : [18.9 - 6 * u, 1.1 + 5 * u, 0.11];
+    },
+    focus: () => [18.0, 1.1, 0.6],
+    contact: [18.0, 1.0, 0.45],
+    metrics: [
+      { label: 'Intensidade do contato', value: foul ? '76% (forte)' : '14% (leve)', tone: foul ? 'bad' : 'ok' },
+      { label: 'Queda após o toque', value: foul ? '+0,02 s (imediata)' : '+0,14 s (tardia)', tone: foul ? 'bad' : 'warn' },
+      { label: 'Bola jogada primeiro', value: foul ? 'Não' : 'Sim, pelo defensor', tone: foul ? 'bad' : 'ok' },
+      { label: 'Ponto de contato', value: foul ? 'Perna de apoio do atacante' : 'Perna de balanço (marginal)' },
+      { label: 'Posição do lance', value: 'Dentro da grande área' }
+    ]
+  };
+}

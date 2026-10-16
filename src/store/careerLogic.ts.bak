@@ -1,0 +1,179 @@
+import type {
+  Team, Fixture, DivisionTier, MatchReport, RefereeStyle, Officials, ObserverReport, InboxMessage, PressQuestion
+} from '../types/types';
+
+export const CHAMPIONSHIP: Record<string, string> = {
+  SERIE_D: 'Campeonato Brasileiro Série D', SERIE_C: 'Campeonato Brasileiro Série C',
+  SERIE_B: 'Campeonato Brasileiro Série B', SERIE_A: 'Campeonato Brasileiro Série A', FIFA_INTERNACIONAL: 'Competições Internacionais'
+};
+export const tierLabel = (t: DivisionTier | string) => t.replace('SERIE_', 'Série ').replace('FIFA_INTERNACIONAL', 'FIFA');
+export const APPROACH_FACTOR: Record<RefereeStyle, number> = { DIALOGADOR: 0.7, PREVENTIVO: 0.85, DISCIPLINADOR: 1.0, RIGOROSO: 1.15 };
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+const shuffle = <T,>(arr: T[]): T[] => {
+  const x = [...arr];
+  for (let i = x.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [x[i], x[j]] = [x[j], x[i]]; }
+  return x;
+};
+
+// ---------- Calendário ----------
+export function buildSeason(tier: DivisionTier, teams: Team[], season: number): Fixture[] {
+  const ids = shuffle(teams.filter(t => t.tier === tier).map(t => t.id));
+  if (ids.length < 4) return [];
+  const pairs: [number, number][][] = [[[0, 1], [2, 3]], [[0, 2], [1, 3]], [[0, 3], [1, 2]]];
+  const fx: Fixture[] = [];
+  for (let leg = 0; leg < 2; leg++) {
+    pairs.forEach((round, ri) => {
+      const rn = leg * 3 + ri + 1;
+      const refIdx = Math.random() < 0.5 ? 0 : 1;
+      round.forEach(([a, b], i) => {
+        fx.push({
+          id: 's' + season + '-r' + rn + '-' + i, round: rn, homeId: leg === 0 ? ids[a] : ids[b], awayId: leg === 0 ? ids[b] : ids[a],
+          played: false, homeScore: 0, awayScore: 0, refMatch: i === refIdx
+        });
+      });
+    });
+  }
+  return fx;
+}
+
+const poisson = (lambda: number) => {
+  const L = Math.exp(-lambda);
+  let k = 0;
+  let p = 1;
+  do { k++; p *= Math.random(); } while (p > L && k < 9);
+  return k - 1;
+};
+export const simulateScore = (h: Team, a: Team): [number, number] => [
+  poisson(clamp(1.3 + (h.attackStrength - a.defenseStrength) / 45, 0.3, 3.2)),
+  poisson(clamp(1.0 + (a.attackStrength - h.defenseStrength) / 45, 0.3, 3.2))
+];
+
+export function roundDate(season: number, round: number): string {
+  const d = new Date(Date.UTC(2026 + season - 1, 1, 1));
+  while (d.getUTCDay() !== 6) d.setUTCDate(d.getUTCDate() + 1);
+  d.setUTCDate(d.getUTCDate() + (round - 1) * 7);
+  return d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+}
+
+export interface StandingRow {
+  team: Team; p: number; w: number; d: number; l: number; gf: number; ga: number; gd: number; pts: number; form: ('W' | 'D' | 'L')[];
+}
+export function computeStandings(fixtures: Fixture[], teams: Team[]): StandingRow[] {
+  const ids = new Set<string>();
+  fixtures.forEach(f => { ids.add(f.homeId); ids.add(f.awayId); });
+  const rows = new Map<string, StandingRow>();
+  teams.filter(t => ids.has(t.id)).forEach(t => rows.set(t.id, { team: t, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, gd: 0, pts: 0, form: [] }));
+  [...fixtures].filter(f => f.played).sort((a, b) => a.round - b.round).forEach(f => {
+    const h = rows.get(f.homeId);
+    const a = rows.get(f.awayId);
+    if (!h || !a) return;
+    h.p++; a.p++; h.gf += f.homeScore; h.ga += f.awayScore; a.gf += f.awayScore; a.ga += f.homeScore;
+    if (f.homeScore > f.awayScore) { h.w++; a.l++; h.pts += 3; h.form.push('W'); a.form.push('L'); }
+    else if (f.homeScore < f.awayScore) { a.w++; h.l++; a.pts += 3; a.form.push('W'); h.form.push('L'); }
+    else { h.d++; a.d++; h.pts++; a.pts++; h.form.push('D'); a.form.push('D'); }
+  });
+  return [...rows.values()].map(r => ({ ...r, gd: r.gf - r.ga, form: r.form.slice(-5) }))
+    .sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.team.name.localeCompare(b.team.name));
+}
+
+// ---------- Súmula ----------
+const FIRST = ['Rafael', 'Bruno', 'Thiago', 'Marcelo', 'Eduardo', 'Felipe', 'Rodrigo', 'Gustavo', 'Leandro', 'Daniel', 'Fernanda', 'Camila', 'Juliana'];
+const LAST = ['Almeida', 'Barbosa', 'Cardoso', 'Duarte', 'Esteves', 'Fontes', 'Guedes', 'Lacerda', 'Macedo', 'Nogueira', 'Pacheco', 'Queiroz', 'Rangel', 'Siqueira'];
+const person = () => pick(FIRST) + ' ' + pick(LAST);
+export const pickOfficials = (): Officials => ({ assistant1: person(), assistant2: person(), fourth: person(), var: person(), avar: person() });
+
+export function buildObserver(p: {
+  rating: number; decisions: { correct: boolean; title: string; minute: number }[]; temperature: number; physical: number;
+  approach: RefereeStyle; notes: string[]; cards: number; reds: number;
+}): ObserverReport {
+  const total = p.decisions.length;
+  const wrong = p.decisions.filter(d => !d.correct).length;
+  const good = p.notes.filter(n => n.endsWith('✓')).length;
+  const bad = p.notes.filter(n => n.endsWith('✕')).length;
+  const scores = [
+    { label: 'Aplicação das regras', value: total === 0 ? 8.6 : clamp(10 - (wrong / total) * 5.5, 4, 10) },
+    { label: 'Controle disciplinar', value: clamp(p.rating + 0.2, 4, 10) },
+    { label: 'Controle de jogo', value: clamp(10 - (p.temperature - 30) / 12, 5, 9.8) },
+    { label: 'Condição física', value: clamp(5 + p.physical / 20, 5, 9.8) },
+    { label: 'Comunicação', value: clamp(7.4 + (p.approach === 'DIALOGADOR' ? 0.6 : 0) + good * 0.4 - bad * 0.5, 4, 10) }
+  ].map(s => ({ ...s, value: Number(s.value.toFixed(1)) }));
+  const comment = p.rating >= 9 ? 'Atuação de nível internacional: leitura de jogo precisa, decisões firmes e comunicação exemplar com os capitães.'
+    : p.rating >= 8.4 ? 'Atuação sólida. Manteve o critério ao longo do jogo e controlou os momentos de maior tensão.'
+    : p.rating >= 7.5 ? 'Atuação regular, com oscilações de critério em alguns lances capitais. Há espaço claro para evolução.'
+    : 'Atuação abaixo do esperado. Decisões importantes divergiram do protocolo e o controle do jogo foi comprometido.';
+  const highlights = p.decisions.map(d => d.minute + "' " + d.title + ': ' + (d.correct ? 'decisão correta ✓' : 'decisão divergente do protocolo ✕'));
+  if (p.reds > 0) highlights.push(p.reds + ' expulsão(ões) aplicada(s) na partida.');
+  if (highlights.length === 0) highlights.push('Sem lances capitais submetidos ao VAR nesta partida.');
+  return { scores, comment, highlights };
+}
+
+export function buildNarrative(r: MatchReport): string {
+  const y = r.cards.filter(c => c.cardType === 'YELLOW').length;
+  const rd = r.cards.filter(c => c.cardType === 'RED').length;
+  const pens = r.goals.filter(g => g.isPenalty).length;
+  return 'Realizou-se, no ' + r.stadium + ', a partida entre ' + r.homeTeamName + ' e ' + r.awayTeamName + ', válida pela ' + (r.round ?? '?') + 'ª rodada do ' + (r.competition ?? 'campeonato') +
+    ', com público de ' + r.attendance.toLocaleString('pt-BR') + ' pessoas. A partida terminou ' + r.homeScore + ' x ' + r.awayScore + ', com ' + r.goals.length + ' gol(s)' + (pens ? ' (sendo ' + pens + ' de pênalti)' : '') +
+    '. Foram exibidos ' + y + ' cartão(ões) amarelo(s) e ' + rd + ' vermelho(s). A arbitragem de vídeo revisou ' + r.varReviews.length + ' lance(s). ' +
+    (r.interactionNotes && r.interactionNotes.length ? 'Registram-se ocorrências de interação com capitães e comissões técnicas, descritas na linha do tempo. ' : 'Não houve ocorrências disciplinares fora de campo. ') +
+    'Nada mais havendo a relatar, encerra-se esta súmula.';
+}
+
+// ---------- Interações ----------
+export const CAPTAIN_COMPLAINTS: { text: string; heat: 1 | 2 | 3 }[] = [
+  { text: 'Árbitro, esse critério está mudando o tempo todo. Pode explicar?', heat: 1 },
+  { text: 'Faltou conversa com o time do outro lado, eles estão provocando!', heat: 1 },
+  { text: 'Você está deixando bater demais, alguém vai se machucar!', heat: 2 },
+  { text: 'A torcida está em cima e você está ignorando as faltas contra a gente!', heat: 2 },
+  { text: 'Isso é um absurdo! Você está prejudicando a gente o jogo inteiro!', heat: 3 }
+];
+export const CAPTAIN_NAMES = ['Gabriel Moura', 'Ícaro Rocha', 'Vinícius Lara', 'Matheus Prado', 'Leo Vasques', 'André Tavares'];
+
+const PRESS: PressQuestion[] = [
+  { journalist: 'Repórter do Esporte TV', question: 'Houve críticas ao seu critério disciplinar hoje. Como responde?', options: [
+    { label: 'Mantive o mesmo critério para as duas equipes.', reply: 'Resposta equilibrada. A imprensa registra a firmeza.', reputation: 2 },
+    { label: 'Os atletas precisam respeitar mais a arbitragem.', reply: 'A frase gera polêmica nas redes, mas mostra personalidade.', reputation: 0 },
+    { label: 'Prefiro não comentar sobre critérios.', reply: 'A fuga da pergunta passa insegurança.', reputation: -2 }] },
+  { journalist: 'Rádio Bola Quente', question: 'O VAR foi acionado mais de uma vez. Você se sentiu pressionado?', options: [
+    { label: 'O VAR é uma ferramenta e a decisão final é sempre minha.', reply: 'Resposta madura, bem vista pela comissão.', reputation: 2 },
+    { label: 'Foi uma noite difícil, não vou negar.', reply: 'Honestidade valorizada, mas expõe fragilidade.', reputation: 1 },
+    { label: 'Eu estava no controle de tudo.', reply: 'A arrogância é criticada pelos comentaristas.', reputation: -2 }] },
+  { journalist: 'Portal Lance Capital', question: 'O técnico reclamou muito. Pretende relatar à federação?', options: [
+    { label: 'Tudo que ocorreu consta na súmula.', reply: 'Postura profissional e transparente.', reputation: 2 },
+    { label: 'Foi um desabafo normal de jogo, já passou.', reply: 'Conciliador, mas alguns acham frouxo.', reputation: 0 },
+    { label: 'Vou pedir punição exemplar.', reply: 'A declaração incendeia o debate.', reputation: -1 }] },
+  { journalist: 'Mesa Redonda FM', question: 'Qual foi o momento mais difícil da partida?', options: [
+    { label: 'A tomada de decisão nos lances capitais, com todas as câmeras.', reply: 'Mostra preparo técnico.', reputation: 2 },
+    { label: 'Controlar a temperatura do jogo no segundo tempo.', reply: 'Boa leitura de jogo.', reputation: 1 },
+    { label: 'Nenhum, foi tranquilo.', reply: 'Parece desconectado da realidade.', reputation: -1 }] },
+  { journalist: 'Jornal do Apito', question: 'Algum recado para os clubes sobre a arbitragem?', options: [
+    { label: 'Respeito mútuo e diálogo constroem melhores jogos.', reply: 'Declaração elogiada pela federação.', reputation: 3 },
+    { label: 'Estudem mais as regras.', reply: 'Soa arrogante para parte da imprensa.', reputation: -1 },
+    { label: 'Sem recados.', reply: 'Neutro, sem repercussão.', reputation: 0 }] }
+];
+export const pickPress = (): PressQuestion[] => shuffle(PRESS).slice(0, 2);
+
+export function federationFeedback(rating: number, round: number, week: number, report: MatchReport): InboxMessage {
+  const tone = rating >= 8.4 ? 'POSITIVE' : rating >= 7.5 ? 'NEUTRAL' : 'NEGATIVE';
+  return {
+    id: 'msg-' + Date.now() + '-' + round, week, from: 'Comissão de Arbitragem', tone, read: false,
+    subject: 'Avaliação da rodada ' + round + ' • nota ' + rating.toFixed(2),
+    body: tone === 'POSITIVE' ? 'Parabéns pela atuação em ' + report.homeTeamName + ' x ' + report.awayTeamName + '. Mantenha o nível para ser considerado para escalas maiores.'
+      : tone === 'NEUTRAL' ? 'Sua atuação em ' + report.homeTeamName + ' x ' + report.awayTeamName + ' foi dentro do esperado. Revise os lances capitais com o instrutor.'
+      : 'A comissão identificou falhas em ' + report.homeTeamName + ' x ' + report.awayTeamName + '. Recomendamos reciclagem de regras antes da próxima escala.'
+  };
+}
+
+export function computeAchievements(history: MatchReport[], seasons: { outcome: string }[]) {
+  const perfect = history.some(h => h.decisionVerdicts.length >= 2 && h.decisionVerdicts.every(v => v.isCorrect));
+  return [
+    { id: 'first', icon: '🥇', title: 'Primeiro apito', desc: 'Complete sua primeira partida.', unlocked: history.length >= 1 },
+    { id: 'ten', icon: '🔟', title: 'Dez jogos', desc: 'Apite 10 partidas na carreira.', unlocked: history.length >= 10 },
+    { id: 'nine', icon: '⭐', title: 'Nota 9', desc: 'Receba nota 9,00 ou mais em um jogo.', unlocked: history.some(h => h.uefaScore >= 9) },
+    { id: 'var', icon: '🖥️', title: 'VAR perfeito', desc: 'Acerte todos os lances capitais de um jogo (2+).', unlocked: perfect },
+    { id: 'red', icon: '🟥', title: 'Mão firme', desc: 'Aplique um cartão vermelho.', unlocked: history.some(h => h.cards.some(c => c.cardType === 'RED')) },
+    { id: 'season', icon: '📅', title: 'Temporada completa', desc: 'Conclua uma temporada de 6 jogos.', unlocked: seasons.length >= 1 },
+    { id: 'promo', icon: '🚀', title: 'Subiu de divisão', desc: 'Seja promovido ao fim de uma temporada.', unlocked: seasons.some(s => s.outcome === 'PROMOVIDO') }
+  ];
+}

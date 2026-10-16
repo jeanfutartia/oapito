@@ -1,0 +1,23 @@
+﻿=== 1. VERSÕES DO AMBIENTE ===
+Node: v25.6.0
+NPM:  11.8.0
+
+=== 2. VERIFICAÇÃO DE TIPOS E SINTAXE (TYPESCRIPT) ===
+
+
+=== 3. TESTE DE COMPILAÇÃO REAL (VITE BUILD) ===
+
+> o-apito@0.0.0 build
+> tsc -b && vite build
+
+src/App.tsx(1,8): error TS6133: 'React' is declared but its value is never read.
+src/components/VARModal.tsx(2,10): error TS1484: 'Incident' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
+src/components/VARModal.tsx(2,20): error TS1484: 'DecisionType' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
+src/store/useGameStore.ts(2,10): error TS1484: 'RefereeProfile' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
+src/store/useGameStore.ts(2,26): error TS1484: 'Team' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
+src/store/useGameStore.ts(2,32): error TS1484: 'Incident' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
+src/store/useGameStore.ts(2,42): error TS1484: 'DecisionType' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
+
+
+=== 4. LISTA DE ARQUIVOS EM SRC ===
+

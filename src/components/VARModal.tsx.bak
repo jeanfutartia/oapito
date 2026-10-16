@@ -1,0 +1,101 @@
+﻿import type { DecisionType, Incident, IncidentCategory, Team } from '../types/types';
+import { DECISION_LABEL } from '../mock/incidentsDatabase';
+import { IncidentFrameVisualizer } from './IncidentFrameVisualizer';
+import { OffsideAnalysis } from './OffsideAnalysis';
+import { PitchRadarMap } from './PitchRadarMap';
+
+interface VARModalProps {
+  incident: Incident;
+  homeTeam: Team;
+  awayTeam: Team;
+  initialDecision?: DecisionType | null;
+  onConfirm: (decision: DecisionType) => void;
+}
+
+type Group = 'GOAL' | 'PENALTY' | 'CARD';
+
+const GROUP: Record<IncidentCategory, Group> = {
+  IMPEDIMENTO_3D: 'GOAL',
+  'GOL_POLÊMICO': 'GOAL',
+  PENALTI_DISPUTA: 'PENALTY',
+  MAO_VOLUMETRIA: 'PENALTY',
+  DOGSO_CHANCE_CLARA: 'PENALTY',
+  FORCA_EXCESSIVA: 'CARD'
+};
+
+interface Opt {
+  decision: DecisionType;
+  title: string;
+  sub: string;
+  cls: string;
+}
+
+const OPTIONS: Record<Group, Opt[]> = {
+  GOAL: [
+    { decision: 'GOAL_VALID', title: '⚽ Confirmar Gol', sub: 'Posição / jogada regular', cls: 'bg-emerald-600 hover:bg-emerald-500 text-white' },
+    { decision: 'GOAL_DISALLOWED', title: '🚫 Anular Gol', sub: 'Impedimento ou falta no ataque', cls: 'bg-red-600 hover:bg-red-500 text-white' }
+  ],
+  PENALTY: [
+    { decision: 'PENALTY', title: '⚽ Pênalti', sub: 'Sem cartão', cls: 'bg-emerald-600 hover:bg-emerald-500 text-white' },
+    { decision: 'PENALTY_YELLOW', title: '🟨 Pênalti + Amarelo', sub: 'Tentou jogar a bola', cls: 'bg-amber-500 hover:bg-amber-400 text-black' },
+    { decision: 'PENALTY_RED', title: '🟥 Pênalti + Vermelho', sub: 'DOGSO / sem disputa', cls: 'bg-red-600 hover:bg-red-500 text-white' },
+    { decision: 'PLAY_ON', title: 'Mandar Seguir', sub: 'Contato legal / simulação', cls: 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600' }
+  ],
+  CARD: [
+    { decision: 'PLAY_ON', title: 'Mandar Seguir', sub: 'Sem infração grave', cls: 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600' },
+    { decision: 'YELLOW_CARD', title: '🟨 Cartão Amarelo', sub: 'Imprudência', cls: 'bg-amber-500 hover:bg-amber-400 text-black' },
+    { decision: 'RED_CARD', title: '🟥 Cartão Vermelho', sub: 'Força excessiva', cls: 'bg-red-600 hover:bg-red-500 text-white' }
+  ]
+};
+
+export const VARModal = ({ incident, homeTeam, awayTeam, onConfirm }: VARModalProps) => {
+  const options = OPTIONS[GROUP[incident.category]];
+
+  return (
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-start justify-center p-4 z-50 overflow-y-auto font-sans">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full p-6 shadow-2xl flex flex-col gap-4 text-slate-100 my-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-3">
+            <span className="bg-red-600 text-white font-extrabold px-3 py-1 rounded text-xs tracking-wider animate-pulse">
+              ON-FIELD REVIEW (OFR)
+            </span>
+            <h2 className="text-sm font-bold text-slate-100">{incident.title}</h2>
+          </div>
+          <span className="text-xs text-slate-400 font-mono">Minuto {incident.minute}' • Protocolo IFAB</span>
+        </div>
+
+        <PitchRadarMap zone={incident.pitchZone} />
+
+        {incident.offside ? (
+          <OffsideAnalysis incident={incident} homeTeam={homeTeam} awayTeam={awayTeam} />
+        ) : (
+          <IncidentFrameVisualizer incident={incident} homeTeam={homeTeam} awayTeam={awayTeam} />
+        )}
+
+        <div className="bg-slate-950 border border-slate-800 p-3 rounded-lg text-xs text-slate-300">
+          <strong className="text-slate-100">Critério IFAB: </strong>
+          {incident.ifabExplanation}
+        </div>
+
+        <div className="border-t border-slate-800 pt-3 flex flex-col gap-2">
+          <div className="flex flex-wrap justify-between items-center gap-2">
+            <span className="text-xs font-bold text-slate-400 uppercase">Sua decisão final após a análise</span>
+            <span className="text-[11px] text-slate-500 font-mono">Decisão em campo: {DECISION_LABEL[incident.fieldDecision]}</span>
+          </div>
+          <div className={`grid grid-cols-1 gap-3 ${options.length === 4 ? 'sm:grid-cols-4' : options.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+            {options.map(opt => (
+              <button
+                key={opt.decision}
+                onClick={() => onConfirm(opt.decision)}
+                className={`py-3 px-3 rounded-xl font-bold text-xs shadow flex flex-col items-center gap-0.5 transition ${opt.cls}`}
+              >
+                <span className="text-sm font-black">{opt.title}</span>
+                <span className="text-[10px] opacity-80">{opt.sub}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

@@ -1,0 +1,415 @@
+﻿import { create } from 'zustand';
+import type { RefereeProfile, Team, Incident, DecisionType, RefereeStyle, MatchReport, DivisionTier, ManagerIncident, PreMatchStoryline, MatchLiveStats, GoalAnimationData } from '../types/types';
+import { generateMatchNarration, generatePreMatchStoryline, testGeminiApiKey, generateGameTwistNarrative, generateComprehensivePostMatchMedia } from '../services/geminiService';
+import { getRandomIncidentsForMatch } from '../mock/incidentsDatabase';
+import { soundEffects } from '../services/soundEffects';
+
+const ALL_TEAMS_DATABASE: Team[] = [
+  { id: 'd1', name: 'Santa Cruz', shortName: 'STC', tier: 'SERIE_D', primaryColor: '#c00', secondaryColor: '#111', points: 18, played: 10, won: 5, drawn: 3, lost: 2, goalsFor: 14, goalsAgainst: 9, aggressionLevel: 8, attackStrength: 75, defenseStrength: 65, stadiumName: 'Estádio do Arruda', managerName: 'Marcelo Martelotte' },
+  { id: 'd2', name: 'Treze da Paraíba', shortName: 'TRZ', tier: 'SERIE_D', primaryColor: '#111', secondaryColor: '#fff', points: 19, played: 10, won: 6, drawn: 1, lost: 3, goalsFor: 15, goalsAgainst: 10, aggressionLevel: 9, attackStrength: 74, defenseStrength: 66, stadiumName: 'Amigão', managerName: 'Waguinho Dias' },
+  { id: 'd3', name: 'Ferroviária', shortName: 'AFE', tier: 'SERIE_D', primaryColor: '#800', secondaryColor: '#fff', points: 21, played: 10, won: 6, drawn: 3, lost: 1, goalsFor: 13, goalsAgainst: 6, aggressionLevel: 7, attackStrength: 76, defenseStrength: 70, stadiumName: 'Fonte Luminosa', managerName: 'Vinícius Bergantin' },
+  { id: 'd4', name: 'Maringá FC', shortName: 'MFC', tier: 'SERIE_D', primaryColor: '#073', secondaryColor: '#111', points: 17, played: 10, won: 5, drawn: 2, lost: 3, goalsFor: 14, goalsAgainst: 11, aggressionLevel: 7, attackStrength: 72, defenseStrength: 67, stadiumName: 'Willie Davids', managerName: 'Jorge Castilho' },
+  { id: 'a1', name: 'Botafogo', shortName: 'BOT', tier: 'SERIE_A', primaryColor: '#222', secondaryColor: '#fff', points: 40, played: 19, won: 12, drawn: 4, lost: 3, goalsFor: 32, goalsAgainst: 14, aggressionLevel: 7, attackStrength: 86, defenseStrength: 85, stadiumName: 'Nilton Santos', managerName: 'Artur Jorge' },
+  { id: 'a2', name: 'Flamengo', shortName: 'FLA', tier: 'SERIE_A', primaryColor: '#c00', secondaryColor: '#000', points: 37, played: 19, won: 11, drawn: 4, lost: 4, goalsFor: 34, goalsAgainst: 19, aggressionLevel: 8, attackStrength: 88, defenseStrength: 82, stadiumName: 'Maracanã', managerName: 'Filipe Luís' }
+];
+
+export interface NextScheduleData {
+  home: Team;
+  away: Team;
+  stadium: string;
+  derbyRisk: 'BAIXO' | 'MÉDIO' | 'EXTREMO';
+  attendance: number;
+  storyline: PreMatchStoryline;
+}
+
+const INITIAL_STATS: MatchLiveStats = {
+  homePossession: 50,
+  awayPossession: 50,
+  homeShots: 3,
+  awayShots: 2,
+  homeShotsOnTarget: 2,
+  awayShotsOnTarget: 1,
+  homeFouls: 2,
+  awayFouls: 3,
+  homeCorners: 1,
+  awayCorners: 1,
+  homeOffsides: 0,
+  awayOffsides: 1,
+  refereeBpm: 112,
+  distanceCoveredKm: 0.8
+};
+
+interface GameState {
+  isProfileCreated: boolean;
+  geminiValidation: { tested: boolean; valid: boolean; message: string };
+  week: number;
+  seasonMatchCount: number;
+  actionPoints: number;
+  referee: RefereeProfile;
+  teams: Team[];
+  lastPlayedTeamIds: string[];
+  resolvedIncidentIds: string[];
+  matchHistory: MatchReport[];
+  nextMatchSchedule: NextScheduleData | null;
+  currentManagerIncident: ManagerIncident | null;
+  currentGoalAnimation: GoalAnimationData | null;
+  gameTwistUsed: boolean;
+  isEvaluatingPostMatch: boolean;
+  homeManagerEjected: boolean;
+  awayManagerEjected: boolean;
+  liveStats: MatchLiveStats;
+  activeMatch: any | null;
+
+  createProfile: (profile: { name: string; age: number; federation: string; style: RefereeStyle; apiKey: string }) => Promise<void>;
+  validateApiKey: (apiKey: string) => Promise<boolean>;
+  drawNextSchedule: () => Promise<void>;
+  startScheduledMatch: () => void;
+  triggerGameTwistAction: (twistText: string) => Promise<void>;
+  clearGoalAnimation: () => void;
+  updateMatchMinute: () => Promise<void>;
+  setMatchSpeed: (speed: number) => void;
+  triggerInstantFieldDecision: (decision: DecisionType) => Promise<void>;
+  openVarRadioIntercom: () => void;
+  openVarMonitorOFR: () => void;
+  confirmFinalDecision: (decision: DecisionType) => Promise<void>;
+  resolveManagerIncident: (action: 'VERBAL_WARNING' | 'YELLOW_CARD' | 'RED_CARD') => void;
+  finishMatch: () => Promise<void>;
+  spendActionPoint: (actionType: 'PHYSICAL' | 'RULES' | 'PSYCHOLOGY' | 'REST') => void;
+  advanceWeek: () => void;
+  registerSprayUse: () => void;
+}
+
+export const useGameStore = create<GameState>((set, get) => ({
+  isProfileCreated: false,
+  geminiValidation: { tested: false, valid: false, message: 'Não testado' },
+  week: 1,
+  seasonMatchCount: 0,
+  actionPoints: 3,
+  referee: {
+    name: 'Carlos Silva',
+    age: 26,
+    federation: 'Federação Paulista (FPF)',
+    style: 'DIALOGADOR',
+    tier: 'SERIE_D',
+    bankBalance: 1200,
+    weeklyExpenses: 350,
+    reputation: 60,
+    uefaAverageScore: 8.40,
+    geminiApiKey: '',
+    attributes: { physicalCondition: 72, stressResistance: 65, authority: 68, ruleKnowledge: 75, integrity: 95 },
+    stats: { matches: 0, yellowCards: 0, redCards: 0, penalties: 0, varInterventions: 0 }
+  },
+  teams: ALL_TEAMS_DATABASE,
+  lastPlayedTeamIds: [],
+  resolvedIncidentIds: [],
+  matchHistory: [],
+  nextMatchSchedule: null,
+  currentManagerIncident: null,
+  currentGoalAnimation: null,
+  gameTwistUsed: false,
+  isEvaluatingPostMatch: false,
+  homeManagerEjected: false,
+  awayManagerEjected: false,
+  liveStats: INITIAL_STATS,
+  activeMatch: null,
+
+  validateApiKey: async (apiKey: string) => {
+    const res = await testGeminiApiKey(apiKey);
+    set({ geminiValidation: { tested: true, valid: res.success, message: res.message } });
+    return res.success;
+  },
+
+  createProfile: async ({ name, age, federation, style, apiKey }) => {
+    let isValid = false;
+    if (apiKey && apiKey.trim() !== '') {
+      const res = await testGeminiApiKey(apiKey);
+      isValid = res.success;
+      set({ geminiValidation: { tested: true, valid: res.success, message: res.message } });
+    }
+    set(state => ({
+      isProfileCreated: true,
+      referee: { ...state.referee, name: name.trim() || 'Árbitro Oficial', age, federation, style, geminiApiKey: isValid ? apiKey.trim() : '' }
+    }));
+    await get().drawNextSchedule();
+  },
+
+  drawNextSchedule: async () => {
+    const currentTier = get().referee.tier;
+    const tierTeams = get().teams.filter(t => t.tier === currentTier);
+    const home = tierTeams[0] || ALL_TEAMS_DATABASE[0];
+    const away = tierTeams[1] || ALL_TEAMS_DATABASE[1];
+    const storyline = await generatePreMatchStoryline(home, away, currentTier, get().referee.name, get().referee.geminiApiKey);
+
+    set({
+      nextMatchSchedule: { home, away, stadium: home.stadiumName, derbyRisk: 'EXTREMO', attendance: 14500, storyline }
+    });
+  },
+
+  startScheduledMatch: () => {
+    const schedule = get().nextMatchSchedule;
+    if (!schedule) return;
+
+    soundEffects.playWhistle('LONG');
+    const incidents = getRandomIncidentsForMatch(schedule.home, schedule.away);
+
+    set({
+      gameTwistUsed: false,
+      currentManagerIncident: null,
+      currentGoalAnimation: null,
+      isEvaluatingPostMatch: false,
+      homeManagerEjected: false,
+      awayManagerEjected: false,
+      resolvedIncidentIds: [],
+      liveStats: { ...INITIAL_STATS },
+      activeMatch: {
+        homeTeam: schedule.home,
+        awayTeam: schedule.away,
+        homeScore: 0,
+        awayScore: 0,
+        homeRedCards: 0,
+        awayRedCards: 0,
+        minute: 0,
+        status: 'FIRST_HALF',
+        matchSpeed: 1,
+        matchTemperature: 45,
+        ticker: [`Apito inicial: ${schedule.home.name} x ${schedule.away.name}!`].filter(Boolean),
+        scheduledIncidents: incidents,
+        currentIncident: null,
+        initialDecision: null,
+        finalDecision: null,
+        matchRating: 8.40,
+        decisionsHistory: [],
+        report: {
+          id: `match-${Date.now()}`,
+          week: get().week,
+          tier: get().referee.tier,
+          stadium: schedule.stadium,
+          homeTeamName: schedule.home.name,
+          awayTeamName: schedule.away.name,
+          homeScore: 0,
+          awayScore: 0,
+          uefaScore: 8.40,
+          dateStr: `Rodada ${get().seasonMatchCount + 1} de 6`,
+          attendance: schedule.attendance,
+          pressHeadline: '',
+          matchStats: { ...INITIAL_STATS },
+          decisionVerdicts: [],
+          goals: [],
+          cards: [],
+          varReviews: []
+        }
+      }
+    });
+  },
+
+  clearGoalAnimation: () => set({ currentGoalAnimation: null }),
+  registerSprayUse: () => {
+    const active = get().activeMatch;
+    if (active) set({ activeMatch: { ...active, matchTemperature: Math.max(20, active.matchTemperature - 6) } });
+  },
+  setMatchSpeed: (speed) => {
+    const active = get().activeMatch;
+    if (active) set({ activeMatch: { ...active, matchSpeed: speed } });
+  },
+
+  triggerGameTwistAction: async (twistText: string) => {
+    const state = get();
+    const active = state.activeMatch;
+    if (!active || state.gameTwistUsed) return;
+    soundEffects.playWhistle('TRIPLE');
+    const res = await generateGameTwistNarrative(twistText, active.homeTeam.name, active.awayTeam.name, `${active.homeScore}-${active.awayScore}`, active.minute, state.referee.geminiApiKey);
+    set({ gameTwistUsed: true, activeMatch: { ...active, matchTemperature: 100, ticker: [res.narration, ...active.ticker] } });
+  },
+
+  updateMatchMinute: async () => {
+    const state = get();
+    const active = state.activeMatch;
+    if (!active || active.status !== 'FIRST_HALF' || state.currentManagerIncident) return;
+
+    const nextMinute = active.minute + 1;
+    let newTicker = [...active.ticker];
+    let curStats = { ...state.liveStats };
+    let newHomeScore = active.homeScore;
+    let newAwayScore = active.awayScore;
+    let report = { ...active.report };
+
+    // Telemetria Biométrica e Posse de Bola Fluida
+    curStats.distanceCoveredKm += 0.09;
+    curStats.refereeBpm = Math.floor(116 + (active.matchTemperature * 0.45));
+    
+    const wave = Math.sin(nextMinute * 0.15) * 12;
+    curStats.homePossession = Math.max(35, Math.min(65, 50 + Math.floor(wave)));
+    curStats.awayPossession = 100 - curStats.homePossession;
+
+    if (nextMinute % 4 === 0) {
+      if (Math.random() < 0.5) {
+        curStats.homeShots++;
+        if (Math.random() < 0.5) curStats.homeShotsOnTarget++;
+      } else {
+        curStats.awayShots++;
+        if (Math.random() < 0.5) curStats.awayShotsOnTarget++;
+      }
+    }
+
+    // Gols mais frequentes baseados na força de ataque
+    const roll = Math.random() * 100;
+    if (roll < 3.2) {
+      newHomeScore++;
+      curStats.homeShots++;
+      curStats.homeShotsOnTarget++;
+      report.goals.push({ minute: nextMinute, team: 'HOME', playerNumber: 9, isPenalty: false });
+      set({
+        currentGoalAnimation: { teamName: active.homeTeam.name, teamColor: active.homeTeam.primaryColor, minute: nextMinute, playerNumber: 9, isPenalty: false }
+      });
+      newTicker.unshift(`⚽ GOL DO ${active.homeTeam.name} aos ${nextMinute}'! Placar: ${newHomeScore} x ${newAwayScore}`);
+    } else if (roll < 6.0) {
+      newAwayScore++;
+      curStats.awayShots++;
+      curStats.awayShotsOnTarget++;
+      report.goals.push({ minute: nextMinute, team: 'AWAY', playerNumber: 11, isPenalty: false });
+      set({
+        currentGoalAnimation: { teamName: active.awayTeam.name, teamColor: active.awayTeam.primaryColor, minute: nextMinute, playerNumber: 11, isPenalty: false }
+      });
+      newTicker.unshift(`⚽ GOL DO ${active.awayTeam.name} aos ${nextMinute}'! Placar: ${newHomeScore} x ${newAwayScore}`);
+    }
+
+    const incident = active.scheduledIncidents.find(i => i.minute === nextMinute && !state.resolvedIncidentIds.includes(i.id));
+    if (incident) {
+      soundEffects.playRadioBeep();
+      newTicker.unshift(`[LANCE CAPITAL - ${nextMinute}'] ${incident.title}`);
+      set({ 
+        liveStats: { ...curStats }, 
+        activeMatch: { ...active, minute: nextMinute, homeScore: newHomeScore, awayScore: newAwayScore, ticker: newTicker, status: 'KMI_PAUSED', currentIncident: incident } 
+      });
+      return;
+    }
+
+    if (nextMinute >= 90) {
+      soundEffects.playWhistle('TRIPLE');
+      newTicker.unshift(`90+4' Fim de jogo!`);
+      report.homeScore = newHomeScore;
+      report.awayScore = newAwayScore;
+      set({ 
+        liveStats: { ...curStats }, 
+        activeMatch: { ...active, minute: 90, homeScore: newHomeScore, awayScore: newAwayScore, ticker: newTicker, status: 'FINISHED', report } 
+      });
+      return;
+    }
+
+    set({ 
+      liveStats: { ...curStats }, 
+      activeMatch: { ...active, minute: nextMinute, homeScore: newHomeScore, awayScore: newAwayScore, ticker: newTicker } 
+    });
+  },
+
+  triggerInstantFieldDecision: async (decision) => {
+    const state = get();
+    const active = state.activeMatch;
+    if (!active || !active.currentIncident) return;
+    soundEffects.playWhistle('SHORT');
+
+    let homeScore = active.homeScore;
+    let awayScore = active.awayScore;
+    let newTicker = [...active.ticker];
+    const incident = active.currentIncident;
+
+    if (decision === 'PENALTY' || decision === 'PENALTY_YELLOW' || decision === 'PENALTY_RED') {
+      const isGoal = Math.random() < 0.75;
+      if (isGoal) {
+        if (incident.offendingTeam === 'HOME') awayScore++; else homeScore++;
+        newTicker.unshift(`🎯 PÊNALTI CONVERTIDO! A cobrança estufa as redes aos ${incident.minute}'!`);
+        set({
+          currentGoalAnimation: { teamName: incident.attackingTeam === 'HOME' ? active.homeTeam.name : active.awayTeam.name, teamColor: incident.attackingTeam === 'HOME' ? active.homeTeam.primaryColor : active.awayTeam.primaryColor, minute: incident.minute, playerNumber: incident.victimPlayerNumber, isPenalty: true }
+        });
+      } else {
+        newTicker.unshift(`🧤 GOLEIRO DEFENDE O PÊNALTI! Cobrança desperdiçada aos ${incident.minute}'!`);
+      }
+    }
+
+    set({
+      resolvedIncidentIds: [...state.resolvedIncidentIds, incident.id],
+      activeMatch: { ...active, status: 'FIRST_HALF', homeScore, awayScore, currentIncident: null, ticker: newTicker }
+    });
+  },
+
+  openVarRadioIntercom: () => { soundEffects.playRadioBeep(); set(s => ({ activeMatch: s.activeMatch ? { ...s.activeMatch, status: 'VAR_RADIO' } : null })); },
+  openVarMonitorOFR: () => set(s => ({ activeMatch: s.activeMatch ? { ...s.activeMatch, status: 'VAR_ACTIVE' } : null })),
+
+  confirmFinalDecision: async (decision) => {
+    soundEffects.playWhistle('LONG');
+    const state = get();
+    const active = state.activeMatch;
+    if (!active || !active.currentIncident) return;
+
+    let homeScore = active.homeScore;
+    let awayScore = active.awayScore;
+    let newTicker = [...active.ticker];
+    const incident = active.currentIncident;
+
+    if (decision === 'PENALTY' || decision === 'PENALTY_YELLOW' || decision === 'PENALTY_RED') {
+      const isGoal = Math.random() < 0.75;
+      if (isGoal) {
+        if (incident.offendingTeam === 'HOME') awayScore++; else homeScore++;
+        newTicker.unshift(`🎯 PÊNALTI REVISADO E CONVERTIDO NA MARCA DA CAL!`);
+        set({
+          currentGoalAnimation: { teamName: incident.attackingTeam === 'HOME' ? active.homeTeam.name : active.awayTeam.name, teamColor: incident.attackingTeam === 'HOME' ? active.homeTeam.primaryColor : active.awayTeam.primaryColor, minute: incident.minute, playerNumber: incident.victimPlayerNumber, isPenalty: true }
+        });
+      } else {
+        newTicker.unshift(`🧤 GOLEIRO PEGA A COBRANÇA APÓS REVISÃO DO VAR!`);
+      }
+    }
+
+    set({
+      resolvedIncidentIds: [...state.resolvedIncidentIds, incident.id],
+      activeMatch: { ...active, status: 'FIRST_HALF', homeScore, awayScore, currentIncident: null, ticker: newTicker }
+    });
+  },
+
+  resolveManagerIncident: () => {
+    soundEffects.playWhistle('SHORT');
+    set(() => ({ currentManagerIncident: null }));
+  },
+
+  finishMatch: async () => {
+    const state = get();
+    const active = state.activeMatch;
+    if (!active) return;
+
+    const newSeasonCount = state.seasonMatchCount + 1;
+    let newTier = state.referee.tier;
+    let seasonResetAlert = '';
+
+    if (newSeasonCount >= 6) {
+      const avg = state.referee.uefaAverageScore;
+      if (avg >= 9.0) {
+        if (newTier === 'SERIE_D') newTier = 'SERIE_A';
+        else if (newTier === 'SERIE_A') newTier = 'FIFA_INTERNACIONAL';
+        seasonResetAlert = '🎉 PROMOVIDO DE DIVISÃO!';
+      } else if (avg < 7.0) {
+        newTier = 'SERIE_D';
+        seasonResetAlert = '⚠️ REBAIXADO E RECICLADO PELA CORREGEDORIA!';
+      } else {
+        seasonResetAlert = '🛡️ Temporada concluída com sucesso!';
+      }
+    }
+
+    set({
+      seasonMatchCount: newSeasonCount >= 6 ? 0 : newSeasonCount,
+      matchHistory: [active.report, ...state.matchHistory],
+      referee: {
+        ...state.referee,
+        tier: newTier,
+        bankBalance: state.referee.bankBalance + 2500,
+        stats: { ...state.referee.stats, matches: state.referee.stats.matches + 1 }
+      },
+      activeMatch: null,
+      week: state.week + 1
+    });
+
+    if (seasonResetAlert) alert(seasonResetAlert);
+    await get().drawNextSchedule();
+  },
+
+  spendActionPoint: () => set(s => ({ actionPoints: s.actionPoints - 1 })),
+  advanceWeek: () => { set(s => ({ week: s.week + 1, actionPoints: 3 })); get().drawNextSchedule(); }
+}));
