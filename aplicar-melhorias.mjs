@@ -101,5 +101,16 @@ for (const [rel, pairs] of Object.entries(TEXT_PATCHES)) {
   else console.log('  [mantido] ' + rel + ' (nada a ajustar)');
 }
 
+// ---- arquivos antigos que não são mais usados e quebram o build (movidos, não apagados) ----
+const STALE = ['src/components/IncidentFrameVisualizer.tsx', 'src/components/OffsideAnalysis.tsx'];
+for (const rel of STALE) {
+  const from = path.join(root, rel);
+  if (!fs.existsSync(from)) continue;
+  const to = path.join(root, '_arquivos_antigos', path.basename(rel) + '.txt');
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.renameSync(from, to);
+  console.log('  [movido] ' + rel + ' -> _arquivos_antigos/ (não era mais usado)');
+}
+
 console.log('\nPronto! Backups em *.bak. Agora rode: npm run dev');
 console.log('Para testar no celular: npm run dev -- --host  e abra o endereço de rede, no mesmo Wi-Fi.');
